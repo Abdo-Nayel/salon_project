@@ -1,0 +1,41 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}💸 المصروفات - Salon Pro{% endblock %}
+{% block page_title %}المصروفات{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">💸 المصروفات</h3>
+    <a href="/expenses/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> جديد</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3 px-4">التصنيف</th>
+                        <th class="py-3">المبلغ</th>
+                        <th class="py-3">الوصف</th>
+                        <th class="py-3">التاريخ</th>
+                        <th class="py-3">بواسطة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in expenses %}
+                    <tr>
+                        <td class="px-4"><span class="badge bg-danger">{{ e.category }}</span></td>
+                        <td class="fw-bold text-danger">{{ e.amount }} ج</td>
+                        <td>{{ e.description|truncatechars:50 }}</td>
+                        <td>{{ e.date|date:"Y-m-d" }}</td>
+                        <td>{{ e.created_by|default:"-" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5 text-muted"><i class="fas fa-receipt fa-3x mb-3"></i><p>لا توجد مصروفات</p></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

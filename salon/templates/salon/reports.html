@@ -1,0 +1,106 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}📊 التقارير - Salon Pro{% endblock %}
+{% block page_title %}التقارير والإحصائيات{% endblock %}
+
+{% block content %}
+<!-- Date Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">من تاريخ</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date|default:"" }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">إلى تاريخ</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date|default:"" }}">
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter me-2"></i> عرض</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-primary">
+            <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-money-bill-wave"></i></div>
+            <h6 class="text-muted">الإيرادات</h6>
+            <h3 class="fw-bold text-primary">{{ total_revenue|default:0 }} ج</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-danger">
+            <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fas fa-receipt"></i></div>
+            <h6 class="text-muted">المصروفات</h6>
+            <h3 class="fw-bold text-danger">{{ total_expenses|default:0 }} ج</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-success">
+            <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="fas fa-chart-line"></i></div>
+            <h6 class="text-muted">صافي الربح</h6>
+            <h3 class="fw-bold text-success">{{ net_profit|default:0 }} ج</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-info">
+            <div class="stat-icon bg-info bg-opacity-10 text-info"><i class="fas fa-file-invoice"></i></div>
+            <h6 class="text-muted">الفواتير</h6>
+            <h3 class="fw-bold text-info">{{ total_invoices|default:0 }}</h3>
+        </div>
+    </div>
+</div>
+
+<!-- Tables -->
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4"><h5 class="fw-bold">💳 طرق الدفع</h5></div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light"><tr><th class="px-4">الطريقة</th><th>المبلغ</th><th>العدد</th></tr></thead>
+                    <tbody>
+                        {% for payment in payment_breakdown %}
+                        <tr>
+                            <td class="px-4">
+                                {% if payment.payment_method == 'cash' %}💵 كاش
+                                {% elif payment.payment_method == 'visa' %}💳 فيزا
+                                {% else %}💵+💳 Mix{% endif %}
+                            </td>
+                            <td class="fw-bold">{{ payment.total|default:0 }} ج</td>
+                            <td>{{ payment.count|default:0 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center py-4 text-muted">لا توجد بيانات</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4"><h5 class="fw-bold">✂️ أداء الحلاقين</h5></div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light"><tr><th class="px-4">الحلاق</th><th>المبيعات</th><th>الفواتير</th></tr></thead>
+                    <tbody>
+                        {% for barber in barber_performance %}
+                        <tr>
+                            <td class="px-4">{{ barber.barber__first_name|default:"" }} {{ barber.barber__last_name|default:"" }}</td>
+                            <td class="fw-bold text-primary">{{ barber.total_sales|default:0 }} ج</td>
+                            <td>{{ barber.invoice_count|default:0 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-center py-4 text-muted">لا توجد بيانات</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

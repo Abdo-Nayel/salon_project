@@ -1,0 +1,41 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}👤 العملاء - Salon Pro{% endblock %}
+{% block page_title %}العملاء{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">👤 العملاء</h3>
+    <a href="/customers/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> جديد</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3 px-4">الاسم</th>
+                        <th class="py-3">الهاتف</th>
+                        <th class="py-3">الزيارات</th>
+                        <th class="py-3">الإنفاق</th>
+                        <th class="py-3">تاريخ التسجيل</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in customers %}
+                    <tr>
+                        <td class="px-4 fw-bold">{{ c.name }}</td>
+                        <td>{{ c.phone|default:"-" }}</td>
+                        <td><span class="badge bg-info">{{ c.visits_count }}</span></td>
+                        <td class="fw-bold text-success">{{ c.total_spent }} ج</td>
+                        <td class="text-muted">{{ c.created_at|date:"Y-m-d" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5 text-muted"><i class="fas fa-users fa-3x mb-3"></i><p>لا يوجد عملاء</p></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

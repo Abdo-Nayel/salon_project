@@ -1,0 +1,8 @@
+Django>=4.2,<5.0
+Pillow>=9.0
+
+# Optional - for PDF & Excel support (requires Rust on Windows):
+# reportlab>=3.6
+# openpyxl>=3.0
+# python-bidi>=0.4
+# arabic-reshaper>=2.1

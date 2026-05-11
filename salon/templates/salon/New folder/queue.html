@@ -1,0 +1,288 @@
+{% extends 'salon/base.html' %}
+
+{% block title %}أرقام الحجز - صالون برو{% endblock %}
+{% block page_title %}🎫 أرقام الحجز{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <!-- Current Number Display -->
+    <div class="lg:col-span-1">
+        <div class="glass-card rounded-2xl p-6 text-center sticky top-6">
+            <h3 class="text-lg font-bold mb-4">الرقم الحالي</h3>
+            <div class="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center text-5xl font-bold shadow-2xl neon-glow mb-4 animate-pulse-slow">
+                {% if in_progress %}
+                    {{ in_progress.0.queue_number }}
+                {% else %}
+                    --
+                {% endif %}
+            </div>
+            <p class="text-gray-400 text-sm">
+                {% if in_progress %}
+                    {{ in_progress.0.customer_name }} - {{ in_progress.0.barber.first_name|default:"غير محدد" }}
+                {% else %}
+                    لا يوجد حجز قيد التنفيذ
+                {% endif %}
+            </p>
+
+            <div class="mt-6 space-y-2">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-400">في الانتظار</span>
+                    <span class="font-bold text-orange-400">{{ waiting|length }}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-400">قيد التنفيذ</span>
+                    <span class="font-bold text-emerald-400">{{ in_progress|length }}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-400">تم إنجازه</span>
+                    <span class="font-bold text-primary-400">{{ completed|length }}</span>
+                </div>
+            </div>
+
+            <button onclick="openNewQueueModal()" class="w-full mt-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-600 font-bold hover:shadow-lg transition-all">
+                ➕ حجز جديد
+            </button>
+        </div>
+    </div>
+
+    <!-- Queue Lists -->
+    <div class="lg:col-span-3 space-y-6">
+        <!-- Waiting -->
+        <div class="glass-card rounded-2xl p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                    ⏳ في الانتظار
+                    <span class="bg-orange-500/20 text-orange-400 text-sm px-3 py-1 rounded-full">{{ waiting|length }}</span>
+                </h3>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% for appt in waiting %}
+                <div class="glass-card rounded-xl p-4 hover-lift transition-all group" id="queue-{{ appt.id }}">
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-2xl font-bold shadow-lg">
+                            {{ appt.queue_number }}
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold">{{ appt.customer_name }}</h4>
+                            <p class="text-sm text-gray-400">{{ appt.customer_phone }}</p>
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                {% for service in appt.services.all %}
+                                <span class="text-xs bg-white/10 px-2 py-1 rounded-lg">{{ service.name }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-lg font-bold text-primary-400">{{ appt.estimated_total }} ج</p>
+                            <p class="text-xs text-gray-400">{{ appt.appointment_time|time:"H:i" }}</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-4 pt-3 border-t border-white/10">
+                        <button onclick="updateStatus({{ appt.id }}, 'in_progress')" class="flex-1 py-2 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 transition">
+                            ▶️ بدء
+                        </button>
+                        <button onclick="updateStatus({{ appt.id }}, 'cancelled')" class="px-3 py-2 rounded-lg bg-red-500/20 text-red-400 text-sm hover:bg-red-500/30 transition">
+                            ❌
+                        </button>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-span-full text-center py-12 text-gray-400">
+                    <span class="text-4xl block mb-2">🪑</span>
+                    <p>لا يوجد حجوزات في الانتظار</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- In Progress -->
+        {% if in_progress %}
+        <div class="glass-card rounded-2xl p-6 border border-emerald-500/30">
+            <h3 class="text-xl font-bold mb-6 flex items-center gap-2">
+                🔄 قيد التنفيذ
+                <span class="bg-emerald-500/20 text-emerald-400 text-sm px-3 py-1 rounded-full">{{ in_progress|length }}</span>
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% for appt in in_progress %}
+                <div class="glass-card rounded-xl p-4 bg-emerald-500/5 border border-emerald-500/20">
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-2xl font-bold shadow-lg animate-pulse">
+                            {{ appt.queue_number }}
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold">{{ appt.customer_name }}</h4>
+                            <p class="text-sm text-emerald-400">{{ appt.barber.first_name|default:"غير محدد" }}</p>
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                {% for service in appt.services.all %}
+                                <span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-lg">{{ service.name }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-lg font-bold text-emerald-400">{{ appt.estimated_total }} ج</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-white/10">
+                        <button onclick="updateStatus({{ appt.id }}, 'completed')" class="w-full py-2 rounded-lg bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600 transition">
+                            ✅ إنهاء
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Completed Today -->
+        {% if completed %}
+        <div class="glass-card rounded-2xl p-6">
+            <h3 class="text-xl font-bold mb-6 flex items-center gap-2">
+                ✅ تم إنجازه اليوم
+                <span class="bg-primary-500/20 text-primary-400 text-sm px-3 py-1 rounded-full">{{ completed|length }}</span>
+            </h3>
+
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                {% for appt in completed %}
+                <div class="flex items-center gap-4 p-3 rounded-xl bg-white/5">
+                    <div class="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center font-bold text-sm">
+                        {{ appt.queue_number }}
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-medium">{{ appt.customer_name }}</p>
+                        <p class="text-xs text-gray-400">{{ appt.barber.first_name|default:"" }}</p>
+                    </div>
+                    <span class="text-primary-400 font-bold">{{ appt.estimated_total }} ج</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- New Queue Modal -->
+<div id="queueModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeQueueModal()"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-md">
+        <div class="glass-card rounded-2xl p-6 m-4">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold">🎫 حجز جديد</h3>
+                <button onclick="closeQueueModal()" class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition">✕</button>
+            </div>
+            <form id="queueForm" onsubmit="submitQueue(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">اسم العميل *</label>
+                        <input type="text" name="customer_name" required 
+                            class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-primary-500 focus:outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">رقم الهاتف</label>
+                        <input type="tel" name="customer_phone"
+                            class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-primary-500 focus:outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">الحلاق</label>
+                        <select name="barber_id" 
+                            class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-primary-500 focus:outline-none transition">
+                            <option value="">اختر الحلاق</option>
+                            {% for barber in request.user.branch.users.all %}
+                                {% if barber.is_barber %}
+                                <option value="{{ barber.id }}">{{ barber.first_name }} {{ barber.last_name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-2">الخدمات</label>
+                        <div class="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                            {% for service in request.user.branch.services.all %}
+                            <label class="flex items-center gap-2 p-2 rounded-lg bg-white/5 cursor-pointer hover:bg-white/10 transition">
+                                <input type="checkbox" name="services[]" value="{{ service.id }}" class="rounded accent-primary-500">
+                                <span class="text-sm">{{ service.name }}</span>
+                                <span class="text-xs text-primary-400 mr-auto">{{ service.price }}ج</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="w-full mt-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-600 font-bold hover:shadow-lg transition-all">
+                    إضافة للدور
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openNewQueueModal() {
+    const modal = document.getElementById('queueModal');
+    modal.classList.remove('hidden');
+    gsap.from(modal.querySelector('.glass-card'), {
+        scale: 0.8, opacity: 0, duration: 0.4, ease: 'back.out(1.7)'
+    });
+}
+
+function closeQueueModal() {
+    document.getElementById('queueModal').classList.add('hidden');
+}
+
+function submitQueue(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    fetch('"/bookings/add/"', {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            closeQueueModal();
+            location.reload();
+        }
+    });
+}
+
+function updateStatus(id, status) {
+    const formData = new FormData();
+    formData.append('status', status);
+
+    fetch(`/queue/update/${id}/`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const el = document.getElementById(`queue-${id}`);
+            if (el) {
+                gsap.to(el, {
+                    scale: 0.9,
+                    opacity: 0,
+                    duration: 0.3,
+                    onComplete: () => location.reload()
+                });
+            } else {
+                location.reload();
+            }
+        }
+    });
+}
+
+// Auto refresh every 15 seconds
+setInterval(() => {
+    fetch(window.location.href)
+        .then(r => r.text())
+        .then(html => {
+            // Simple refresh for now - could be optimized with AJAX
+        });
+}, 15000);
+</script>
+{% endblock %}

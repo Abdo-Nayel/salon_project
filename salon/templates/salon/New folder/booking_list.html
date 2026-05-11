@@ -1,0 +1,74 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}📅 الحجوزات - Salon Pro{% endblock %}
+{% block page_title %}الحجوزات{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">📅 الحجوزات</h3>
+    <a href="/bookings/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> حجز جديد</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3 px-4">#</th>
+                        <th class="py-3">العميل</th>
+                        <th class="py-3">الهاتف</th>
+                        <th class="py-3">الحلاق</th>
+                        <th class="py-3">الحالة</th>
+                        <th class="py-3">التاريخ</th>
+                        <th class="py-3">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in bookings %}
+                    <tr>
+                        <td class="px-4 fw-bold text-primary">{{ booking.queue_number }}</td>
+                        <td>{{ booking.customer_name }}</td>
+                        <td>{{ booking.customer_phone|default:"-" }}</td>
+                        <td>{% if booking.barber %}{{ booking.barber.get_full_name|default:booking.barber.username }}{% else %}<span class="badge bg-secondary">غير محدد</span>{% endif %}</td>
+                        <td>
+                            {% if booking.status == 'waiting' %}<span class="badge bg-warning">⏳ انتظار</span>
+                            {% elif booking.status == 'in_progress' %}<span class="badge bg-primary">✂️ قيد التنفيذ</span>
+                            {% elif booking.status == 'completed' %}<span class="badge bg-success">✅ تم</span>
+                            {% else %}<span class="badge bg-danger">❌ ملغي</span>{% endif %}
+                        </td>
+                        <td class="text-muted">{{ booking.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            <div class="btn-group">
+                                {% if booking.status == 'waiting' %}
+                                <button class="btn btn-sm btn-primary" onclick="updateStatus({{ booking.id }}, 'in_progress')">▶️</button>
+                                {% elif booking.status == 'in_progress' %}
+                                <button class="btn btn-sm btn-success" onclick="updateStatus({{ booking.id }}, 'completed')">✓</button>
+                                {% endif %}
+                                <button class="btn btn-sm btn-danger" onclick="updateStatus({{ booking.id }}, 'cancelled')">✕</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center py-5 text-muted"><i class="fas fa-calendar-times fa-3x mb-3"></i><p>لا يوجد حجوزات</p></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateStatus(id, status) {
+    fetch(`/bookings/${id}/status/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `status=${status}`
+    })
+    .then(r => r.json())
+    .then(data => { if (data.success) location.reload(); });
+}
+</script>
+{% endblock %}

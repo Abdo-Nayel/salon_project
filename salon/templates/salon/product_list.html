@@ -1,0 +1,53 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}✂️ الخدمات - صالون برو{% endblock %}
+{% block page_title %}المنتجات والخدمات{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">✂️ المنتجات والخدمات</h3>
+    <a href="/products/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> جديد</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3 px-4">الاسم</th>
+                        <th class="py-3">السعر</th>
+                        <th class="py-3">التكلفة</th>
+                        <th class="py-3">المخزون</th>
+                        <th class="py-3">الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr>
+                        <td class="px-4 fw-bold">{{ p.name }}</td>
+                        <td class="fw-bold text-primary">{{ p.price }} ج</td>
+                        <td>{{ p.cost }} ج</td>
+                        <td>
+                            {% if p.category.is_service %}
+                                <span class="badge bg-secondary">خدمة</span>
+                            {% else %}
+                                {% if p.stock <= 0 %}
+                                    <span class="badge bg-danger">نفذ</span>
+                                {% elif p.stock <= p.min_stock %}
+                                    <span class="badge bg-warning">منخفض ({{ p.stock }})</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ p.stock }}</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        <td>{% if p.is_active %}<span class="badge bg-success">✅ نشط</span>{% else %}<span class="badge bg-secondary">❌ معطل</span>{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3"></i><p>لا توجد منتجات</p></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

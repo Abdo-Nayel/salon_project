@@ -1,0 +1,57 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}📦 حركة مخزون - Salon Pro{% endblock %}
+{% block page_title %}حركة مخزون{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">المنتج</label>
+                        {{ form.product }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">نوع الحركة</label>
+                        {{ form.movement_type }}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">الكمية</label>
+                            {{ form.quantity }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">التكلفة للوحدة</label>
+                            {{ form.cost }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">التاريخ</label>
+                        {{ form.date }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">ملاحظات (اختياري)</label>
+                        {{ form.notes }}
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-fill">
+                            <i class="fas fa-save me-2"></i> حفظ
+                        </button>
+                        <a href="/inventory/" class="btn btn-secondary">
+                            <i class="fas fa-times me-2"></i> إلغاء
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

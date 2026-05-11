@@ -1,0 +1,66 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}📦 المخزن - صالون برو{% endblock %}
+{% block page_title %}المخزن{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold">📦 المخزن</h3>
+    <div class="d-flex gap-2">
+        <a href="/inventory/movement/add/" class="btn btn-success"><i class="fas fa-plus me-2"></i> حركة مخزون</a>
+        <a href="/products/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> منتج جديد</a>
+    </div>
+</div>
+
+<!-- Alerts -->
+{% if out_of_stock %}
+<div class="alert alert-danger">
+    <strong>⚠️ نفذ المخزون:</strong> {{ out_of_stock.count }} منتج
+</div>
+{% endif %}
+{% if low_stock %}
+<div class="alert alert-warning">
+    <strong>⚠️ مخزون منخفض:</strong> {{ low_stock.count }} منتج
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3 px-4">المنتج</th>
+                        <th class="py-3">السعر</th>
+                        <th class="py-3">التكلفة</th>
+                        <th class="py-3">المخزون</th>
+                        <th class="py-3">الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr>
+                        <td class="px-4 fw-bold">{{ p.name }}</td>
+                        <td>{{ p.price }} ج</td>
+                        <td>{{ p.cost }} ج</td>
+                        <td>
+                            {% if p.category.is_service %}
+                                <span class="badge bg-secondary">خدمة</span>
+                            {% elif p.stock <= 0 %}
+                                <span class="badge bg-danger">نفذ</span>
+                            {% elif p.stock <= p.min_stock %}
+                                <span class="badge bg-warning">{{ p.stock }}</span>
+                            {% else %}
+                                <span class="badge bg-success">{{ p.stock }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{% if p.is_active %}<span class="badge bg-success">✅</span>{% else %}<span class="badge bg-secondary">❌</span>{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center py-5 text-muted">لا توجد منتجات</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

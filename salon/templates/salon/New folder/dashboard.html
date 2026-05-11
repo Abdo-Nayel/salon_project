@@ -1,0 +1,106 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}🏠 الرئيسية - Salon Pro{% endblock %}
+{% block page_title %}لوحة التحكم{% endblock %}
+
+{% block content %}
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-primary">
+            <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-money-bill-wave"></i></div>
+            <h6 class="text-muted">إيرادات اليوم</h6>
+            <h3 class="fw-bold text-primary">{{ current_stats.today_revenue|default:0 }} ج</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-danger">
+            <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fas fa-receipt"></i></div>
+            <h6 class="text-muted">مصروفات اليوم</h6>
+            <h3 class="fw-bold text-danger">{{ current_stats.today_expenses|default:0 }} ج</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-warning">
+            <div class="stat-icon bg-warning bg-opacity-10 text-warning"><i class="fas fa-users"></i></div>
+            <h6 class="text-muted">في الانتظار</h6>
+            <h3 class="fw-bold text-warning">{{ current_stats.waiting_queue|default:0 }}</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card border-start border-4 border-info">
+            <div class="stat-icon bg-info bg-opacity-10 text-info"><i class="fas fa-box"></i></div>
+            <h6 class="text-muted">مخزون منخفض</h6>
+            <h3 class="fw-bold text-info">{{ current_stats.low_stock|default:0 }}</h3>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Queue -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between">
+                <h5 class="fw-bold">📅 حجوزات اليوم</h5>
+                <a href="/bookings/add/" class="btn btn-sm btn-primary">+ جديد</a>
+            </div>
+            <div class="card-body">
+                {% for booking in queue|slice:":5" %}
+                <div class="d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded">
+                    <div>
+                        <span class="fw-bold">#{{ booking.queue_number }}</span> - {{ booking.customer_name }}
+                        {% if booking.barber %}<span class="badge bg-info ms-2">{{ booking.barber.get_full_name|default:booking.barber.username }}</span>{% endif %}
+                    </div>
+                    <span class="badge {% if booking.status == 'waiting' %}bg-warning{% elif booking.status == 'in_progress' %}bg-primary{% else %}bg-success{% endif %}">
+                        {% if booking.status == 'waiting' %}⏳{% elif booking.status == 'in_progress' %}✂️{% else %}✅{% endif %}
+                    </span>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center py-3">لا يوجد حجوزات</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Invoices -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4">
+                <h5 class="fw-bold">🧾 آخر الفواتير</h5>
+            </div>
+            <div class="card-body">
+                {% for inv in recent_invoices|slice:":5" %}
+                <div class="d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded">
+                    <div>
+                        <span class="fw-bold">#{{ inv.invoice_number }}</span>
+                        {% if inv.customer %}<span class="text-muted">- {{ inv.customer.name }}</span>{% endif %}
+                    </div>
+                    <div>
+                        <span class="fw-bold text-primary">{{ inv.final_total }} ج</span>
+                        <span class="badge {% if inv.payment_method == 'cash' %}bg-success{% else %}bg-info{% endif %} ms-2">
+                            {% if inv.payment_method == 'cash' %}💵{% else %}💳{% endif %}
+                        </span>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center py-3">لا توجد فواتير</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Shortcuts -->
+<div class="row g-4 mt-2">
+    {% for s in shortcuts %}
+    <div class="col-md-2 col-6">
+        <a href="{{ s.url }}" class="text-decoration-none">
+            <div class="card text-center p-3 hover-shadow">
+                <div class="fs-1 mb-2">{{ s.icon }}</div>
+                <div class="fw-bold text-dark">{{ s.name }}</div>
+                <small class="text-muted">{{ s.desc }}</small>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

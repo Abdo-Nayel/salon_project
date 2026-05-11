@@ -1,0 +1,49 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}✂️ خدمة جديدة - صالون برو{% endblock %}
+{% block page_title %}خدمة جديدة{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">اسم الخدمة</label>
+                        {{ form.name }}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">السعر (جنية)</label>
+                            {{ form.price }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">المدة (دقيقة)</label>
+                            {{ form.duration }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="is_active" checked>
+                            <label class="form-check-label fw-bold">خدمة نشطة</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-fill">
+                            <i class="fas fa-save me-2"></i> حفظ
+                        </button>
+                        <a href="/services/" class="btn btn-secondary">
+                            <i class="fas fa-times me-2"></i> إلغاء
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
