@@ -67,8 +67,8 @@
                         <tr>
                             <td class="px-4">
                                 {% if payment.payment_method == 'cash' %}💵 كاش
-                                {% elif payment.payment_method == 'visa' %}💳 فيزا
-                                {% else %}💵+💳 Mix{% endif %}
+                                {% elif payment.bank == 'bank' %}💳 Bank
+                                {% else %}💳 Bank{% endif %}
                             </td>
                             <td class="fw-bold">{{ payment.total|default:0 }} ج</td>
                             <td>{{ payment.count|default:0 }}</td>

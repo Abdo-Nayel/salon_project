@@ -1,0 +1,187 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>دور الحجز - {{ config.shop_name }}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 0; }
+            body { width: 80mm; margin: 0; padding: 0; }
+            .no-print { display: none !important; }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+            width: 80mm;
+            margin: 0 auto;
+            padding: 8mm 4mm;
+            background: #fff;
+            color: #000;
+            font-size: 11pt;
+            line-height: 1.5;
+        }
+        .receipt {
+            text-align: center;
+        }
+        .shop-name {
+            font-size: 14pt;
+            font-weight: 800;
+            margin-bottom: 2mm;
+            letter-spacing: 0.5px;
+        }
+        .shop-info {
+            font-size: 8pt;
+            color: #555;
+            margin-bottom: 3mm;
+        }
+        .divider {
+            border: none;
+            border-top: 1px dashed #999;
+            margin: 3mm 0;
+        }
+        .divider-thick {
+            border-top: 2px solid #000;
+        }
+        .label {
+            font-size: 10pt;
+            color: #666;
+            margin-top: 2mm;
+        }
+        .queue-number {
+            font-size: 42pt;
+            font-weight: 900;
+            color: #667eea;
+            margin: 4mm 0;
+            letter-spacing: 3px;
+            line-height: 1;
+        }
+        .info-row {
+            font-size: 9pt;
+            margin: 1.5mm 0;
+            text-align: right;
+            padding: 0 2mm;
+        }
+        .info-label { color: #888; }
+        .info-value { font-weight: 700; }
+        .footer-text {
+            font-size: 8pt;
+            color: #777;
+            margin-top: 4mm;
+        }
+        .date-time {
+            font-size: 7pt;
+            color: #aaa;
+            margin-top: 2mm;
+        }
+        /* Print button for screen only */
+        .print-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.2);
+            z-index: 9999;
+        }
+        .print-btn {
+            background: #fff;
+            color: #667eea;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 12px;
+            font-family: 'Cairo', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .print-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .close-btn {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+        .close-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<base target="_blank">
+</head>
+<body>
+    <div class="receipt">
+        <div class="shop-name">{{ config.shop_name }}</div>
+        {% if config.shop_phone or config.shop_address %}
+        <div class="shop-info">
+            {% if config.shop_phone %}{{ config.shop_phone }}{% endif %}
+            {% if config.shop_address %}<br>{{ config.shop_address }}{% endif %}
+        </div>
+        {% endif %}
+
+        <hr class="divider divider-thick">
+
+        <div class="label">رقم الدور</div>
+        <div class="queue-number">{{ queue_number }}</div>
+
+        <hr class="divider divider-thick">
+
+        {% if customer_name %}
+        <div class="info-row">
+            <span class="info-label">العميل:</span>
+            <span class="info-value">{{ customer_name }}</span>
+        </div>
+        {% endif %}
+        {% if barber_name %}
+        <div class="info-row">
+            <span class="info-label">الحلاق:</span>
+            <span class="info-value">{{ barber_name }}</span>
+        </div>
+        {% endif %}
+        {% if estimated_total %}
+        <div class="info-row">
+            <span class="info-label">التكلفة المتوقعة:</span>
+            <span class="info-value">{{ estimated_total }} ج</span>
+        </div>
+        {% endif %}
+
+        <hr class="divider">
+
+        <div class="date-time">{{ now|date:"Y-m-d H:i" }}</div>
+
+        <div class="footer-text">
+            {{ config.footer_text }}<br>
+            يرجى الانتظار حتى يتم استدعائكم
+        </div>
+    </div>
+
+    <div class="print-bar no-print">
+        <button class="print-btn" onclick="window.print()">
+            <span>🖨️</span> طباعة الفاتورة
+        </button>
+        <button class="print-btn close-btn" onclick="window.close()">
+            <span>✕</span> إغلاق
+        </button>
+    </div>
+
+    <script>
+        window.onload = function() {
+            setTimeout(function() {
+                // Auto-focus for quick printing
+                document.querySelector('.print-btn').focus();
+            }, 300);
+        };
+    </script>
+</body>
+</html>

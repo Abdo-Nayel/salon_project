@@ -1,6 +1,7 @@
 """
 Salon Pro Views - Complete System
 """
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -13,11 +14,11 @@ from decimal import Decimal
 import json
 
 from .models import (
-    Branch, User, Category, Service, Product, Bank, Customer,
+    Branch, User, Service, Product, Bank, Customer,
     Invoice, InvoiceItem, Booking, Expense, StockMovement
 )
 from .forms import (
-    LoginForm, UserForm, BranchForm, CategoryForm, ServiceForm, ProductForm,
+    LoginForm, UserForm, BranchForm, ServiceForm, ProductForm,
     BankForm, CustomerForm, BookingForm, ExpenseForm, StockMovementForm
 )
 
@@ -29,7 +30,7 @@ from .forms import (
 def get_user_branch(request):
     """Get branch for current user"""
     if request.user.is_superuser:
-        return None  # Superuser sees all
+        return None
     return request.user.branch
 
 
@@ -79,7 +80,6 @@ def dashboard(request):
     branch = get_user_branch(request)
     today = timezone.now().date()
 
-    # Stats
     if branch:
         invoices_today = Invoice.objects.filter(branch=branch, created_at__date=today)
         expenses_today = Expense.objects.filter(branch=branch, date=today)
@@ -94,13 +94,11 @@ def dashboard(request):
     revenue = invoices_today.aggregate(total=Sum('final_total'))['total'] or 0
     expenses = expenses_today.aggregate(total=Sum('amount'))['total'] or 0
 
-    # Queue
     if branch:
         queue = Booking.objects.filter(branch=branch, status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
     else:
         queue = Booking.objects.filter(status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
 
-    # Recent invoices
     recent = get_branch_queryset(request, Invoice)[:10]
 
     context = {
@@ -130,16 +128,14 @@ def pos(request):
         messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
         return redirect('dashboard')
 
-    # Get services for POS (not products)
-    # Get ALL services for POS (show everything, no filtering)
     if branch:
-        services = Service.objects.filter(branch=branch)
+        services = Service.objects.filter(branch=branch, is_active=True)
         barbers = User.objects.filter(is_barber=True, branch=branch, is_active=True)
+        banks = Bank.objects.filter(branch=branch, is_active=True)
     else:
-        services = Service.objects.all()
+        services = Service.objects.filter(is_active=True)
         barbers = User.objects.filter(is_barber=True, is_active=True)
-
-    categories = Category.objects.filter(type='service', is_active=True)
+        banks = Bank.objects.filter(is_active=True)
 
     if request.method == 'POST':
         data = json.loads(request.body)
@@ -148,12 +144,10 @@ def pos(request):
         if not items:
             return JsonResponse({'success': False, 'error': 'Cart is empty'})
 
-        # Create invoice
         invoice = Invoice()
         invoice.branch = branch or Branch.objects.first()
         invoice.created_by = request.user
 
-        # Customer
         customer_name = data.get('customer_name', '')
         customer_phone = data.get('customer_phone', '')
         if customer_name:
@@ -163,12 +157,10 @@ def pos(request):
             )
             invoice.customer = customer
 
-        # Barber
         barber_id = data.get('barber')
         if barber_id:
             invoice.barber = User.objects.get(id=barber_id)
 
-        # Payment
         invoice.payment_method = data.get('payment_method', 'cash')
         bank_id = data.get('bank')
         if bank_id:
@@ -178,7 +170,6 @@ def pos(request):
         invoice.notes = data.get('notes', '')
         invoice.save()
 
-        # Add items
         subtotal = 0
         for item in items:
             service = Service.objects.get(id=item['id'])
@@ -194,7 +185,6 @@ def pos(request):
         invoice.subtotal = subtotal
         invoice.save()
 
-        # Update customer
         if invoice.customer:
             invoice.customer.visits_count += 1
             invoice.customer.total_spent += invoice.final_total
@@ -209,8 +199,8 @@ def pos(request):
 
     context = {
         'services': services,
-        'categories': categories,
         'barbers': barbers,
+        'banks': banks,
     }
     return render(request, 'salon/pos.html', context)
 
@@ -247,11 +237,8 @@ def booking_add(request):
         if form.is_valid():
             booking = form.save(commit=False)
             booking.branch = branch or Branch.objects.first()
-
-            # Generate queue number
             last = Booking.objects.filter(branch=booking.branch, created_at__date=timezone.now().date()).order_by('queue_number').last()
             booking.queue_number = (last.queue_number + 1) if last else 1
-
             booking.save()
             form.save_m2m()
             messages.success(request, f"✅ تم إضافة الحجز رقم {booking.queue_number} بنجاح")
@@ -382,7 +369,6 @@ def reports(request):
     start_date = request.GET.get('start_date', today.replace(day=1))
     end_date = request.GET.get('end_date', today)
 
-    # Base querysets
     if branch:
         invoices = Invoice.objects.filter(branch=branch, created_at__date__range=[start_date, end_date])
         expenses = Expense.objects.filter(branch=branch, date__range=[start_date, end_date])
@@ -390,18 +376,15 @@ def reports(request):
         invoices = Invoice.objects.filter(created_at__date__range=[start_date, end_date])
         expenses = Expense.objects.filter(date__range=[start_date, end_date])
 
-    # Summary
     total_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
     total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
     net_profit = total_revenue - total_expenses
     total_invoices = invoices.count()
 
-    # Payment breakdown
     payment_breakdown = invoices.values('payment_method', 'bank__name').annotate(
         total=Sum('final_total'), count=Count('id')
     )
 
-    # Barber performance
     barber_performance = invoices.filter(barber__isnull=False).values(
         'barber__first_name', 'barber__last_name'
     ).annotate(
@@ -409,12 +392,10 @@ def reports(request):
         invoice_count=Count('id')
     ).order_by('-total_sales')
 
-    # Daily data
     daily_data = invoices.extra(select={'day': 'date(created_at)'}).values('day').annotate(
         total=Sum('final_total')
     ).order_by('day')
 
-    # Banks for filter
     if branch:
         banks = Bank.objects.filter(branch=branch, is_active=True)
     else:
@@ -459,7 +440,6 @@ def service_add(request):
             return redirect('service_list')
     else:
         form = ServiceForm()
-        form.fields['category'].queryset = Category.objects.filter(type='service', is_active=True)
 
     return render(request, 'salon/service_form.html', {'form': form})
 
@@ -488,7 +468,6 @@ def product_add(request):
             return redirect('product_list')
     else:
         form = ProductForm()
-        form.fields['category'].queryset = Category.objects.filter(type='product', is_active=True)
 
     return render(request, 'salon/product_form.html', {'form': form})
 
@@ -522,7 +501,7 @@ def customer_add(request):
 
 
 # =============================================================================
-# SETTINGS - USERS, BRANCHES, CATEGORIES, BANKS
+# SETTINGS
 # =============================================================================
 
 @login_required
@@ -531,10 +510,21 @@ def settings_view(request):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
-    return render(request, 'salon/settings.html')
+    branches = Branch.objects.all() if request.user.is_superuser else Branch.objects.filter(id=get_user_branch(request).id) if get_user_branch(request) else Branch.objects.none()
+    users = User.objects.all() if request.user.is_superuser else User.objects.filter(branch=get_user_branch(request))
+    banks = Bank.objects.all() if request.user.is_superuser else Bank.objects.filter(branch=get_user_branch(request))
+
+    return render(request, 'salon/settings.html', {
+        'branches': branches,
+        'users': users,
+        'banks': banks,
+    })
 
 
-# Users
+# =============================================================================
+# USERS
+# =============================================================================
+
 @login_required
 def user_list(request):
     if not request.user.can_users and not request.user.is_superuser:
@@ -551,6 +541,12 @@ def user_add(request):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
+    if request.user.is_superuser:
+        branches = Branch.objects.all()
+    else:
+        user_branch = get_user_branch(request)
+        branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
+
     if request.method == 'POST':
         form = UserForm(request.POST)
         if form.is_valid():
@@ -560,14 +556,20 @@ def user_add(request):
                 user.set_password(password)
             user.save()
             messages.success(request, f"✅ تم إنشاء المستخدم {user.username} بنجاح")
-            return redirect('user_list')
+            return redirect('settings')
     else:
         form = UserForm()
 
-    return render(request, 'salon/user_form.html', {'form': form})
+    return render(request, 'salon/user_form.html', {
+        'form': form,
+        'branches': branches,
+    })
 
 
-# Branches
+# =============================================================================
+# BRANCHES
+# =============================================================================
+
 @login_required
 def branch_list(request):
     if not request.user.is_superuser:
@@ -596,36 +598,10 @@ def branch_add(request):
     return render(request, 'salon/branch_form.html', {'form': form})
 
 
-# Categories
-@login_required
-def category_list(request):
-    if not request.user.can_settings and not request.user.is_superuser:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
-        return redirect('dashboard')
+# =============================================================================
+# BANKS
+# =============================================================================
 
-    categories = Category.objects.all()
-    return render(request, 'salon/category_list.html', {'categories': categories})
-
-
-@login_required
-def category_add(request):
-    if not request.user.can_settings and not request.user.is_superuser:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
-        return redirect('dashboard')
-
-    if request.method == 'POST':
-        form = CategoryForm(request.POST)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "✅ تم إنشاء التصنيف بنجاح")
-            return redirect('category_list')
-    else:
-        form = CategoryForm()
-
-    return render(request, 'salon/category_form.html', {'form': form})
-
-
-# Banks
 @login_required
 def bank_list(request):
     if not request.user.can_settings and not request.user.is_superuser:
@@ -647,16 +623,136 @@ def bank_add(request):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
+    if request.user.is_superuser:
+        branches = Branch.objects.all()
+    else:
+        user_branch = get_user_branch(request)
+        branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
+
     if request.method == 'POST':
         form = BankForm(request.POST)
         if form.is_valid():
-            form.save()
+            bank = form.save(commit=False)
+            if not request.user.is_superuser:
+                bank.branch = get_user_branch(request)
+            bank.save()
             messages.success(request, "✅ تم إضافة البنك بنجاح")
-            return redirect('bank_list')
+            return redirect('settings')
     else:
         form = BankForm()
+        if not request.user.is_superuser:
+            form.fields['branch'].queryset = branches
 
-    return render(request, 'salon/bank_form.html', {'form': form})
+    return render(request, 'salon/bank_form.html', {
+        'form': form,
+        'branches': branches,
+    })
+
+
+# =============================================================================
+# PRINTING - Queue Tickets & Invoices
+# =============================================================================
+
+@login_required
+def print_queue_ticket(request, pk):
+    """Print a queue/waiting ticket"""
+    booking = get_object_or_404(Booking, pk=pk)
+
+    # Get services names
+    services = [s.name for s in booking.services.all()]
+
+    # Calculate estimated total
+    estimated_total = sum(s.price for s in booking.services.all())
+
+    context = {
+        'queue_number': booking.queue_number,
+        'customer_name': booking.customer_name,
+        'barber_name': booking.barber.get_full_name() if booking.barber else '',
+        'services': services,
+        'estimated_total': estimated_total,
+        'now': timezone.now(),
+        'config': {
+            'shop_name': getattr(settings, 'SALON_NAME', 'Salon Pro'),
+            'shop_phone': getattr(settings, 'SALON_PHONE', ''),
+            'shop_address': getattr(settings, 'SALON_ADDRESS', ''),
+            'footer_text': 'شكراً لزيارتكم!',
+        }
+    }
+
+    return render(request, 'salon/queue_receipt.html', context)
+
+
+@login_required
+def print_invoice_receipt(request, pk):
+    """Print sales invoice receipt"""
+    invoice = get_object_or_404(Invoice, pk=pk)
+    items = invoice.items.all()
+
+    context = {
+        'invoice': invoice,
+        'items': items,
+        'config': {
+            'shop_name': getattr(settings, 'SALON_NAME', 'Salon Pro'),
+            'shop_phone': getattr(settings, 'SALON_PHONE', ''),
+            'shop_address': getattr(settings, 'SALON_ADDRESS', ''),
+            'footer_text': 'شكراً لزيارتكم!',
+        }
+    }
+
+    return render(request, 'salon/invoice_receipt.html', context)
+
+
+@login_required
+@require_POST
+def print_direct_queue(request, pk):
+    """Direct print queue ticket to Windows printer"""
+    try:
+        from .printer import print_queue_ticket
+        booking = get_object_or_404(Booking, pk=pk)
+        services = [s.name for s in booking.services.all()]
+        estimated_total = sum(s.price for s in booking.services.all())
+
+        success, message = print_queue_ticket(
+            queue_number=booking.queue_number,
+            customer_name=booking.customer_name,
+            barber_name=booking.barber.get_full_name() if booking.barber else '',
+            services=services,
+            estimated_total=estimated_total
+        )
+
+        return JsonResponse({'success': success, 'message': message})
+    except ImportError:
+        # printer.py not installed - return graceful error
+        return JsonResponse({
+            'success': False, 
+            'message': 'Direct printer not configured. Use browser print instead.',
+            'fallback_url': f'/booking/{pk}/print/'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
+
+
+@login_required
+@require_POST
+def print_direct_invoice(request, pk):
+    """Direct print invoice to Windows printer"""
+    try:
+        from .printer import print_invoice_receipt
+        invoice = get_object_or_404(Invoice, pk=pk)
+        items = invoice.items.all()
+
+        success, message = print_invoice_receipt(invoice, items)
+
+        return JsonResponse({'success': success, 'message': message})
+    except ImportError:
+        # printer.py not installed - return graceful error with fallback
+        return JsonResponse({
+            'success': False,
+            'message': 'Direct printer not configured. Use browser print instead.',
+            'fallback_url': f'/invoice/{pk}/receipt/'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
 
 
 # =============================================================================

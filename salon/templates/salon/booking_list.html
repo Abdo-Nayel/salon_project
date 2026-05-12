@@ -39,6 +39,7 @@
                         <td class="text-muted">{{ booking.created_at|date:"Y-m-d H:i" }}</td>
                         <td>
                             <div class="btn-group">
+                                <a href="/booking/{{ booking.id }}/print/" target="_blank" class="btn btn-sm btn-info" title="طباعة الدور">🖨️</a>
                                 {% if booking.status == 'waiting' %}
                                 <button class="btn btn-sm btn-primary" onclick="updateStatus({{ booking.id }}, 'in_progress')">▶️</button>
                                 {% elif booking.status == 'in_progress' %}

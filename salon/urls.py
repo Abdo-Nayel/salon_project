@@ -36,7 +36,7 @@ urlpatterns = [
     path('services/', views.service_list, name='service_list'),
     path('services/add/', views.service_add, name='service_add'),
 
-    # Products
+    # Products (kept for inventory use, removed from menu)
     path('products/', views.product_list, name='product_list'),
     path('products/add/', views.product_add, name='product_add'),
 
@@ -44,25 +44,24 @@ urlpatterns = [
     path('customers/', views.customer_list, name='customer_list'),
     path('customers/add/', views.customer_add, name='customer_add'),
 
-    # Settings - Users
+    # Settings
     path('settings/', views.settings_view, name='settings'),
     path('users/', views.user_list, name='user_list'),
     path('users/add/', views.user_add, name='user_add'),
-    # في salon_project_pkg/urls.py
 
-
-
-    # Settings - Branches
+    # Branches
     path('branches/', views.branch_list, name='branch_list'),
     path('branches/add/', views.branch_add, name='branch_add'),
 
-    # Settings - Categories
-    path('categories/', views.category_list, name='category_list'),
-    path('categories/add/', views.category_add, name='category_add'),
-
-    # Settings - Banks
+    # Banks
     path('banks/', views.bank_list, name='bank_list'),
     path('banks/add/', views.bank_add, name='bank_add'),
+
+    # Printing
+    path('booking/<int:pk>/print/', views.print_queue_ticket, name='print_queue_ticket'),
+    path('invoice/<int:pk>/receipt/', views.print_invoice_receipt, name='print_invoice_receipt'),
+    path('booking/<int:pk>/print-direct/', views.print_direct_queue, name='print_direct_queue'),
+    path('invoice/<int:pk>/print-direct/', views.print_direct_invoice, name='print_direct_invoice'),
 
     # API
     path('api/search-customer/', views.api_search_customer, name='api_search_customer'),

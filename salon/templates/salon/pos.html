@@ -4,25 +4,24 @@
 
 {% block content %}
 <div class="row">
-    <!-- Products -->
+    <!-- Services -->
     <div class="col-lg-8">
-        <!-- Products Grid -->
         <div class="row g-3" id="productsGrid">
-            {% for product in products %}
-            <div class="col-md-4 col-lg-3 product-item" >
-                <div class="card h-100 cursor-pointer" onclick="addToCart({{ product.id }}, '{{ product.name }}', {{ product.price }})">
+            {% for service in services %}
+            <div class="col-md-4 col-lg-3 product-item">
+                <div class="card h-100 cursor-pointer" onclick="addToCart({{ service.id }}, '{{ service.name }}', {{ service.price }})">
                     <div class="card-body text-center">
                         <div class="bg-light rounded-3 mb-2" style="height:80px;display:flex;align-items:center;justify-content:center;font-size:2rem;">
-                            {{ product.category.icon }}
+                            ✂️
                         </div>
-                        <h6 class="fw-bold mb-1">{{ product.name }}</h6>
-                        <p class="text-primary fw-bold mb-0">{{ product.price }} ج</p>
+                        <h6 class="fw-bold mb-1">{{ service.name }}</h6>
+                        <p class="text-primary fw-bold mb-0">{{ service.price }} ج</p>
                     </div>
                 </div>
             </div>
             {% empty %}
             <div class="col-12 text-center py-5">
-                <p class="text-muted">لا توجد خدمات متاحة</p>
+                <p class="text-muted">لا توجد خدمات متاحة. <a href="/services/add/">أضف خدمة جديدة</a></p>
             </div>
             {% endfor %}
         </div>
@@ -78,13 +77,22 @@
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-outline-success flex-fill active" onclick="setPayment('cash')">💵 كاش</button>
                         <button type="button" class="btn btn-outline-info flex-fill" onclick="setPayment('visa')">💳 فيزا</button>
+                        <button type="button" class="btn btn-outline-warning flex-fill" onclick="setPayment('bank')">🏦 بنك</button>
                     </div>
                     <input type="hidden" id="paymentMethod" value="cash">
                 </div>
 
-                <!-- Bank (for visa) -->
+                <!-- Bank Dropdown (for bank payment) -->
                 <div class="mb-3 d-none" id="bankDiv">
-                    <input type="text" id="bankName" class="form-control" placeholder="اسم البنك">
+                    <label class="form-label fw-bold">اختر البنك</label>
+                    <select id="bankSelect" class="form-select">
+                        <option value="">-- اختر البنك --</option>
+                        {% for bank in banks %}
+                        <option value="{{ bank.id }}">{{ bank.name }} - {{ bank.account_number|default:"" }}</option>
+                        {% empty %}
+                        <option value="" disabled>لا يوجد بنوك مكودة - <a href="/banks/add/">أضف بنك</a></option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <!-- Discount -->
@@ -92,9 +100,19 @@
                     <input type="number" id="discountAmount" class="form-control" placeholder="الخصم (جنية)" onchange="calculateTotal()">
                 </div>
 
+                <!-- WhatsApp Button -->
+                <div class="mb-3 d-none" id="whatsappDiv">
+                    <a id="whatsappLink" href="#" target="_blank" class="btn btn-success w-100">
+                        <i class="fab fa-whatsapp me-2"></i> إرسال الفاتورة واتساب
+                    </a>
+                </div>
+
                 <button class="btn btn-success w-100 btn-lg" onclick="submitInvoice()">
                     <i class="fas fa-check me-2"></i> إتمام البيع
                 </button>
+
+                <!-- Print Actions Container -->
+                <div id="printActionsContainer" class="mt-3" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -103,6 +121,7 @@
 <script>
 let cart = [];
 let paymentMethod = 'cash';
+let lastInvoiceData = null;
 
 function addToCart(id, name, price) {
     const existing = cart.find(item => item.id === id);
@@ -164,14 +183,17 @@ function calculateTotal() {
 function setPayment(method) {
     paymentMethod = method;
     document.getElementById('paymentMethod').value = method;
-    document.querySelectorAll('.btn-outline-success, .btn-outline-info').forEach(btn => {
+    document.querySelectorAll('.btn-outline-success, .btn-outline-info, .btn-outline-warning').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
 
     const bankDiv = document.getElementById('bankDiv');
-    if (method === 'visa') bankDiv.classList.remove('d-none');
-    else bankDiv.classList.add('d-none');
+    if (method === 'bank') {
+        bankDiv.classList.remove('d-none');
+    } else {
+        bankDiv.classList.add('d-none');
+    }
 }
 
 function submitInvoice() {
@@ -180,13 +202,22 @@ function submitInvoice() {
         return;
     }
 
+    // Validate bank selection if payment method is bank
+    if (paymentMethod === 'bank') {
+        const bankId = document.getElementById('bankSelect').value;
+        if (!bankId) {
+            alert('⚠️ اختر البنك أولاً!');
+            return;
+        }
+    }
+
     const data = {
         items: cart,
         customer_name: document.getElementById('customerName').value,
         customer_phone: document.getElementById('customerPhone').value,
         barber: document.getElementById('barber').value,
         payment_method: paymentMethod,
-        bank_name: document.getElementById('bankName').value,
+        bank: document.getElementById('bankSelect').value,
         discount: document.getElementById('discountAmount').value,
         csrfmiddlewaretoken: '{{ csrf_token }}'
     };
@@ -202,19 +233,259 @@ function submitInvoice() {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            alert('تم إتمام البيع بنجاح!');
+            lastInvoiceData = data;
+
+            // Show WhatsApp button if customer phone exists
+            const phone = document.getElementById('customerPhone').value;
+            if (phone) {
+                showWhatsAppButton(phone, data.invoice_number, data.invoice_id);
+            }
+
+            // Show print actions with beautiful styling
+            showPrintActions(data.invoice_id, data.invoice_number);
+
             cart = [];
             renderCart();
             document.getElementById('customerName').value = '';
             document.getElementById('customerPhone').value = '';
             document.getElementById('discountAmount').value = '';
+            document.getElementById('whatsappDiv').classList.add('d-none');
         }
     });
+}
+
+function showPrintActions(invoiceId, invoiceNumber) {
+    const container = document.getElementById('printActionsContainer');
+    if (!container) return;
+
+    container.style.display = 'block';
+    container.innerHTML = `
+        <div class="print-actions-card">
+            <div class="print-actions-header">
+                <i class="fas fa-check-circle"></i>
+                <span>تم إتمام البيع بنجاح!</span>
+            </div>
+            <div class="print-actions-body">
+                <a href="/invoice/${invoiceId}/receipt/" target="_blank" class="print-btn-main" onclick="setTimeout(newSale, 500); return true;">
+                    <i class="fas fa-print"></i>
+                    <span>طباعة الفاتورة</span>
+                </a>
+                <button class="print-btn-direct" onclick="directPrint(${invoiceId})">
+                    <i class="fas fa-bolt"></i>
+                    <span>طباعة سريعة (POS)</span>
+                </button>
+                <button class="print-btn-new" onclick="newSale()">
+                    <i class="fas fa-plus"></i>
+                    <span>فاتورة جديدة</span>
+                </button>
+            </div>
+        </div>
+    `;
+    // Scroll to show the buttons
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function newSale() {
+    cart = [];
+    renderCart();
+    document.getElementById('customerName').value = '';
+    document.getElementById('customerPhone').value = '';
+    document.getElementById('discountAmount').value = '';
+    document.getElementById('whatsappDiv').classList.add('d-none');
+    const actions = document.getElementById('printActions');
+    if (actions) actions.remove();
+}
+
+function directPrint(invoiceId) {
+    // Try direct Windows printing
+    fetch(`/invoice/${invoiceId}/print-direct/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(r => {
+        if (!r.ok) {
+            // If server error, fallback to browser print
+            window.open(`/invoice/${invoiceId}/receipt/`, '_blank');
+            return null;
+        }
+        return r.json();
+    })
+    .then(data => {
+        if (data) {
+            if (data.success) {
+                alert('🖨️ ' + data.message);
+            } else {
+                // Fallback to browser print
+                window.open(`/invoice/${invoiceId}/receipt/`, '_blank');
+            }
+        }
+    })
+    .catch(err => {
+        // Network error - fallback to browser print
+        console.log('Direct print failed, using browser print:', err);
+        window.open(`/invoice/${invoiceId}/receipt/`, '_blank');
+    });
+}
+
+function showWhatsAppButton(phone, invoiceNumber, invoiceId) {
+    // Clean phone number
+    let cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.startsWith('0')) {
+        cleanPhone = '2' + cleanPhone; // Add Egypt country code
+    }
+    if (!cleanPhone.startsWith('+')) {
+        cleanPhone = '+' + cleanPhone;
+    }
+
+    const message = encodeURIComponent(
+        `💈 Salon Pro\n` +
+        `فاتورتك رقم: ${invoiceNumber}\n` +
+        `شكراً لزيارتك! 🙏`
+    );
+
+    const whatsappUrl = `https://wa.me/${cleanPhone.replace('+', '')}?text=${message}`;
+
+    const link = document.getElementById('whatsappLink');
+    link.href = whatsappUrl;
+    document.getElementById('whatsappDiv').classList.remove('d-none');
 }
 </script>
 
 <style>
 .cursor-pointer { cursor: pointer; }
 .cursor-pointer:hover { transform: translateY(-3px); transition: all 0.2s; }
+
+/* Print Actions Card - Beautiful Design */
+.print-actions-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(108, 92, 231, 0.15);
+    animation: slideUp 0.5s ease-out;
+    border: 2px solid rgba(102, 126, 234, 0.2);
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.print-actions-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 15px 20px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.print-actions-header i {
+    font-size: 1.3rem;
+}
+
+.print-actions-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.print-btn-main {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 16px 24px;
+    border-radius: 14px;
+    font-weight: 700;
+    font-size: 1rem;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 5px 20px rgba(108, 92, 231, 0.3);
+    cursor: pointer;
+}
+
+.print-btn-main:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(108, 92, 231, 0.4);
+    color: white;
+}
+
+.print-btn-main i {
+    font-size: 1.3rem;
+}
+
+.print-btn-direct {
+    background: linear-gradient(135deg, #fdcb6e 0%, #fd79a8 100%);
+    color: white;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 14px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(253, 203, 110, 0.3);
+    cursor: pointer;
+}
+
+.print-btn-direct:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(253, 203, 110, 0.4);
+}
+
+.print-btn-new {
+    background: white;
+    color: #667eea;
+    border: 2px solid #667eea;
+    padding: 12px 24px;
+    border-radius: 14px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.print-btn-new:hover {
+    background: #667eea;
+    color: white;
+    transform: translateY(-2px);
+}
+
+/* Bank dropdown styling */
+#bankDiv select {
+    border: 2px solid #667eea;
+    background: linear-gradient(135deg, #f8f9fa, #fff);
+}
+
+/* WhatsApp button enhancement */
+#whatsappDiv a {
+    background: linear-gradient(135deg, #25d366 0%, #128c7e 100%) !important;
+    border: none !important;
+    box-shadow: 0 5px 20px rgba(37, 211, 102, 0.3) !important;
+    transition: all 0.3s !important;
+}
+
+#whatsappDiv a:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 25px rgba(37, 211, 102, 0.4) !important;
+}
 </style>
 {% endblock %}

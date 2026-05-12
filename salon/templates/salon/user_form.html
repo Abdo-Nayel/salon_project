@@ -48,11 +48,13 @@
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">الفرع</label>
-                            <select class="form-select" name="branch">
-                                <option value="">اختر الفرع</option>
+                            <label class="form-label fw-bold">الفرع *</label>
+                            <select class="form-select" name="branch" required>
+                                <option value="">-- اختر الفرع --</option>
                                 {% for branch in branches %}
-                                <option value="{{ branch.id }}">{{ branch.name }}</option>
+                                <option value="{{ branch.id }}">{{ branch.name }} {% if branch.is_main %}(رئيسي){% endif %}</option>
+                                {% empty %}
+                                <option value="" disabled>لا يوجد فروع - أضف فرع أولاً</option>
                                 {% endfor %}
                             </select>
                         </div>

@@ -83,6 +83,107 @@
         </div>
     </div>
 
+    <!-- Branches Management -->
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold">🏢 الفروع</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="py-3 px-4">الاسم</th>
+                                <th class="py-3">الهاتف</th>
+                                <th class="py-3">العنوان</th>
+                                <th class="py-3">النوع</th>
+                                <th class="py-3">الحالة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for branch in branches %}
+                            <tr>
+                                <td class="px-4 fw-bold">{{ branch.name }}</td>
+                                <td>{{ branch.phone|default:"-" }}</td>
+                                <td>{{ branch.address|truncatechars:50|default:"-" }}</td>
+                                <td>
+                                    {% if branch.is_main %}
+                                        <span class="badge bg-danger">🏢 رئيسي</span>
+                                    {% else %}
+                                        <span class="badge bg-info">🏪 فرع</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if branch.is_active %}
+                                        <span class="badge bg-success">✅ نشط</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">❌ معطل</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-5 text-muted">
+                                    <i class="fas fa-building fa-3x mb-3"></i>
+                                    <p>لا يوجد فروع</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banks Management -->
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold">🏦 البنوك</h5>
+                <a href="/banks/add/" class="btn btn-sm btn-primary">+ بنك جديد</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="py-3 px-4">اسم البنك</th>
+                                <th class="py-3">رقم الحساب</th>
+                                <th class="py-3">الفرع</th>
+                                <th class="py-3">الحالة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bank in banks %}
+                            <tr>
+                                <td class="px-4 fw-bold">{{ bank.name }}</td>
+                                <td>{{ bank.account_number|default:"-" }}</td>
+                                <td><span class="badge bg-info">{{ bank.branch|default:"الرئيسي" }}</span></td>
+                                <td>
+                                    {% if bank.is_active %}
+                                        <span class="badge bg-success">✅ نشط</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">❌ معطل</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-5 text-muted">
+                                    <i class="fas fa-university fa-3x mb-3"></i>
+                                    <p>لا يوجد بنوك مكودة</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Users Management -->
     <div class="col-md-12">
         <div class="card">

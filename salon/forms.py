@@ -81,23 +81,6 @@ class BranchForm(forms.ModelForm):
 
 
 # =============================================================================
-# CATEGORY FORMS
-# =============================================================================
-
-class CategoryForm(forms.ModelForm):
-    class Meta:
-        model = Category
-        fields = ['name', 'type', 'icon', 'color', 'is_active']
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'type': forms.Select(attrs={'class': 'form-select'}),
-            'icon': forms.TextInput(attrs={'class': 'form-control'}),
-            'color': forms.TextInput(attrs={'class': 'form-control', 'type': 'color'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-        }
-
-
-# =============================================================================
 # SERVICE FORMS (NO CATEGORY)
 # =============================================================================
 

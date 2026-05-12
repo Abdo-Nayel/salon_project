@@ -9,14 +9,14 @@
         <div class="stat-card border-start border-4 border-primary">
             <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-money-bill-wave"></i></div>
             <h6 class="text-muted">إيرادات اليوم</h6>
-            <h3 class="fw-bold text-primary">{{ current_stats.today_revenue|default:0 }} ج</h3>
+            <h3 class="fw-bold text-primary">{{ today_revenue|default:0 }} ج</h3>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card border-start border-4 border-danger">
             <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fas fa-receipt"></i></div>
             <h6 class="text-muted">مصروفات اليوم</h6>
-            <h3 class="fw-bold text-danger">{{ current_stats.today_expenses|default:0 }} ج</h3>
+            <h3 class="fw-bold text-danger">{{ today_expenses|default:0 }} ج</h3>
         </div>
     </div>
     <div class="col-md-3">
