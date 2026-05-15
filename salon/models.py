@@ -42,7 +42,7 @@ class User(AbstractUser):
     photo = models.ImageField(upload_to='users/', blank=True, verbose_name="Photo")
     is_barber = models.BooleanField(default=False, verbose_name="Is Barber")
     commission_rate = models.DecimalField(
-        max_digits=5, decimal_places=2, default=0,
+        max_digits=5, decimal_places=2, default=0, null=True, blank=True,
         verbose_name="Commission %"
     )
 

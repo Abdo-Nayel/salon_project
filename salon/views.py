@@ -548,15 +548,46 @@ def user_add(request):
         branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
 
     if request.method == 'POST':
+        print("=" * 50)
+        print("POST DATA:", dict(request.POST))
+        
         form = UserForm(request.POST)
-        if form.is_valid():
-            user = form.save(commit=False)
-            password = form.cleaned_data.get('password')
-            if password:
-                user.set_password(password)
-            user.save()
-            messages.success(request, f"✅ تم إنشاء المستخدم {user.username} بنجاح")
-            return redirect('settings')
+        print("FORM VALID:", form.is_valid())
+        
+        if not form.is_valid():
+            print("FORM ERRORS:", form.errors)
+            messages.error(request, f"❌ أخطاء: {form.errors}")
+        else:
+            print("CLEANED DATA:", form.cleaned_data)
+            
+            try:
+                user = form.save(commit=False)
+                print("USER BEFORE SAVE - ID:", user.id, "USERNAME:", user.username)
+                
+                password = form.cleaned_data.get('password')
+                print("PASSWORD:", password)
+                
+                if password:
+                    user.set_password(password)
+                    print("PASSWORD SET")
+                
+                user.save()
+                print("USER AFTER SAVE - ID:", user.id)
+                
+                # تحقق من اليوزر في الداتا بيز
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                exists = User.objects.filter(username=user.username).exists()
+                print("USER EXISTS IN DB:", exists)
+                
+                messages.success(request, f"✅ تم إنشاء المستخدم {user.username} بنجاح")
+                return redirect('settings')
+                
+            except Exception as e:
+                import traceback
+                print("ERROR:", str(e))
+                print(traceback.format_exc())
+                messages.error(request, f"❌ خطأ: {str(e)}")
     else:
         form = UserForm()
 

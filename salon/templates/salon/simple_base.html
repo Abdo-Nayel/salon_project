@@ -117,12 +117,16 @@
     })();
     </script>
 </body>
-</html>
-        if (!href.match(/^https?:\/\//)) {
-                link.setAttribute('target', '_self');
-            }
-        });
-    })();
-    </script>
+<script>
+(function () {
+    document.querySelectorAll('a').forEach(link => {
+        const href = link.getAttribute('href');
+
+        if (href && !href.match(/^https?:\/\//)) {
+            link.setAttribute('target', '_self');
+        }
+    });
+})();
+</script>
 </body>
 </html>

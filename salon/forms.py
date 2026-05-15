@@ -43,7 +43,7 @@ class UserForm(forms.ModelForm):
         fields = ['username', 'first_name', 'last_name', 'email', 'phone', 
                   'branch', 'is_barber', 'commission_rate',
                   'can_pos', 'can_inventory', 'can_expenses', 'can_reports', 
-                  'can_settings', 'can_users', 'is_active']
+                  'can_settings', 'can_users', 'is_active', 'password']
         widgets = {
             'username': forms.TextInput(attrs={'class': 'form-control'}),
             'first_name': forms.TextInput(attrs={'class': 'form-control'}),
