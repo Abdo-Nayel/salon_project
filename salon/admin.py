@@ -38,15 +38,15 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ['name', 'branch', 'category', 'price', 'duration', 'is_active']
-    list_filter = ['branch', 'category', 'is_active']
+    list_display = ['name', 'category', 'price', 'duration', 'is_active']
+    list_filter = ['category', 'is_active']
     search_fields = ['name', 'code']
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['name', 'branch', 'category', 'price', 'stock', 'is_active']
-    list_filter = ['branch', 'category', 'is_active']
+    list_display = ['name', 'category', 'price', 'stock', 'is_active']
+    list_filter = ['category', 'is_active']
     search_fields = ['name', 'code']
 
 

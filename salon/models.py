@@ -104,10 +104,10 @@ class Category(models.Model):
 # =============================================================================
 
 class Service(models.Model):
-    branch = models.ForeignKey(
-        Branch, on_delete=models.CASCADE, related_name='services',
-        verbose_name="Branch"
-    )
+    # branch = models.ForeignKey(
+    #     Branch, on_delete=models.CASCADE, related_name='services',
+    #     verbose_name="Branch"
+    # )
     category = models.ForeignKey(
         Category, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='services', limit_choices_to={'type': 'service'},

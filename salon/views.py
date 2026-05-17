@@ -13,12 +13,19 @@ from django.views.decorators.http import require_POST
 from decimal import Decimal
 import json
 
+from django_weasyprint import WeasyTemplateView
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+from weasyprint import HTML, CSS
+from django.conf import settings
+import os
+
 from .models import (
     Branch, User, Service, Product, Bank, Customer,
     Invoice, InvoiceItem, Booking, Expense, StockMovement
 )
 from .forms import (
-    LoginForm, UserForm, BranchForm, ServiceForm, ProductForm,
+    LoginForm, UserForm, ServiceForm, ProductForm,
     BankForm, CustomerForm, BookingForm, ExpenseForm, StockMovementForm
 )
 
@@ -76,39 +83,28 @@ def logout_view(request):
 
 @login_required
 def dashboard(request):
-    user = request.user
     branch = get_user_branch(request)
-    today = timezone.now().date()
-
-    if branch:
-        invoices_today = Invoice.objects.filter(branch=branch, created_at__date=today)
-        expenses_today = Expense.objects.filter(branch=branch, date=today)
-        waiting = Booking.objects.filter(branch=branch, status='waiting').count()
-        low_stock = Product.objects.filter(branch=branch, stock__lte=F('min_stock')).count()
+    
+    # لو superuser → كل الفروع | لو عادي → فرعه بس
+    if request.user.is_superuser:
+        invoices = Invoice.objects.filter(created_at__date=timezone.now().date())
+        expenses = Expense.objects.filter(date=timezone.now().date())
+        # ... كل الاستعلامات بدون فلترة بالفرع
     else:
-        invoices_today = Invoice.objects.filter(created_at__date=today)
-        expenses_today = Expense.objects.filter(date=today)
-        waiting = Booking.objects.filter(status='waiting').count()
-        low_stock = Product.objects.filter(stock__lte=F('min_stock')).count()
+        if not branch:
+            messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
+            return redirect('login')
+        invoices = Invoice.objects.filter(branch=branch, created_at__date=timezone.now().date())
+        expenses = Expense.objects.filter(branch=branch, date=timezone.now().date())
+        # ... فلترة بالفرع
 
-    revenue = invoices_today.aggregate(total=Sum('final_total'))['total'] or 0
-    expenses = expenses_today.aggregate(total=Sum('amount'))['total'] or 0
-
-    if branch:
-        queue = Booking.objects.filter(branch=branch, status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
-    else:
-        queue = Booking.objects.filter(status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
-
-    recent = get_branch_queryset(request, Invoice)[:10]
-
+    today_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
+    today_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
+    
     context = {
-        'revenue': revenue,
-        'expenses': expenses,
-        'waiting': waiting,
-        'low_stock': low_stock,
-        'queue': queue,
-        'recent_invoices': recent,
-        'today': today,
+        'today_revenue': today_revenue,
+        'today_expenses': today_expenses,
+        # ... باقي المتغيرات
     }
     return render(request, 'salon/dashboard.html', context)
 
@@ -129,7 +125,7 @@ def pos(request):
         return redirect('dashboard')
 
     if branch:
-        services = Service.objects.filter(branch=branch, is_active=True)
+        services = Service.objects.filter(is_active=True)
         barbers = User.objects.filter(is_barber=True, branch=branch, is_active=True)
         banks = Bank.objects.filter(branch=branch, is_active=True)
     else:
@@ -352,30 +348,31 @@ def expense_add(request):
 
     return render(request, 'salon/expense_form.html', {'form': form})
 
+# =============================================================================
+# reports_pdf
+# =============================================================================
 
-# =============================================================================
-# REPORTS
-# =============================================================================
 
 @login_required
-def reports(request):
-    if not request.user.can_reports:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
-        return redirect('dashboard')
-
+def reports_pdf(request):
     branch = get_user_branch(request)
-    today = timezone.now().date()
-
-    start_date = request.GET.get('start_date', today.replace(day=1))
-    end_date = request.GET.get('end_date', today)
-
-    if branch:
-        invoices = Invoice.objects.filter(branch=branch, created_at__date__range=[start_date, end_date])
-        expenses = Expense.objects.filter(branch=branch, date__range=[start_date, end_date])
-    else:
-        invoices = Invoice.objects.filter(created_at__date__range=[start_date, end_date])
-        expenses = Expense.objects.filter(date__range=[start_date, end_date])
-
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    
+    invoices = Invoice.objects.all()
+    expenses = Expense.objects.all()
+    
+    if not request.user.is_superuser:
+        if not branch:
+            messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
+            return redirect('dashboard')
+        invoices = invoices.filter(branch=branch)
+        expenses = expenses.filter(branch=branch)
+    
+    if start_date and end_date:
+        invoices = invoices.filter(created_at__date__range=[start_date, end_date])
+        expenses = expenses.filter(date__range=[start_date, end_date])
+    
     total_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
     total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
     net_profit = total_revenue - total_expenses
@@ -383,23 +380,46 @@ def reports(request):
 
     payment_breakdown = invoices.values('payment_method', 'bank__name').annotate(
         total=Sum('final_total'), count=Count('id')
-    )
+    ).order_by('-total')
 
-    barber_performance = invoices.filter(barber__isnull=False).values(
-        'barber__first_name', 'barber__last_name'
-    ).annotate(
-        total_sales=Sum('final_total'),
-        invoice_count=Count('id')
+    barber_performance = invoices.values('barber__first_name', 'barber__last_name').annotate(
+        total_sales=Sum('final_total'), invoice_count=Count('id')
     ).order_by('-total_sales')
 
-    daily_data = invoices.extra(select={'day': 'date(created_at)'}).values('day').annotate(
-        total=Sum('final_total')
-    ).order_by('day')
-
-    if branch:
-        banks = Bank.objects.filter(branch=branch, is_active=True)
+    # إحصائيات الفروع
+    branch_stats = []
+    if request.user.is_superuser:
+        all_branches = Branch.objects.filter(is_active=True)
+        for b in all_branches:
+            branch_invoices = Invoice.objects.filter(branch=b)
+            if start_date and end_date:
+                branch_invoices = branch_invoices.filter(created_at__date__range=[start_date, end_date])
+            
+            branch_cash = branch_invoices.filter(payment_method='cash').aggregate(total=Sum('final_total'))['total'] or 0
+            branch_bank = branch_invoices.filter(payment_method='bank').aggregate(total=Sum('final_total'))['total'] or 0
+            
+            branch_stats.append({
+                'name': b.name,
+                'cash': branch_cash,
+                'bank': branch_bank,
+                'total': branch_cash + branch_bank,
+            })
     else:
-        banks = Bank.objects.filter(is_active=True)
+        if branch:
+            branch_invoices = invoices.filter(branch=branch)
+            branch_cash = branch_invoices.filter(payment_method='cash').aggregate(total=Sum('final_total'))['total'] or 0
+            branch_bank = branch_invoices.filter(payment_method='bank').aggregate(total=Sum('final_total'))['total'] or 0
+            
+            branch_stats.append({
+                'name': branch.name,
+                'cash': branch_cash,
+                'bank': branch_bank,
+                'total': branch_cash + branch_bank,
+            })
+
+    total_cash_all = sum(s['cash'] for s in branch_stats)
+    total_bank_all = sum(s['bank'] for s in branch_stats)
+    grand_total_all = sum(s['total'] for s in branch_stats)
 
     context = {
         'start_date': start_date,
@@ -410,8 +430,144 @@ def reports(request):
         'total_invoices': total_invoices,
         'payment_breakdown': payment_breakdown,
         'barber_performance': barber_performance,
-        'daily_data': list(daily_data),
-        'banks': banks,
+        'branch_stats': branch_stats,
+        'total_cash_all': total_cash_all,
+        'total_bank_all': total_bank_all,
+        'grand_total_all': grand_total_all,
+        'is_superuser': request.user.is_superuser,
+        'user': request.user,
+        'now': timezone.now(),
+    }
+
+    # 🔥 توليد PDF
+    html_string = render_to_string('salon/reports_pdf.html', context)
+    html = HTML(string=html_string, base_url=request.build_absolute_uri())
+    
+    # CSS للـ RTL (اختياري)
+    css_path = os.path.join(settings.BASE_DIR, 'salon', 'static', 'css', 'pdf_rtl.css')
+    if os.path.exists(css_path):
+        css = CSS(filename=css_path)
+        pdf = html.write_pdf(stylesheets=[css])
+    else:
+        pdf = html.write_pdf()
+    
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="report_{timezone.now().strftime("%Y%m%d")}.pdf"'
+    return response  # ✅ return واحدة بس
+
+
+# =============================================================================
+# REPORTS
+# =============================================================================
+
+@login_required
+def reports(request):
+    branch = get_user_branch(request)
+    
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+    
+    invoices = Invoice.objects.all()
+    expenses = Expense.objects.all()
+    
+    if not request.user.is_superuser:
+        if not branch:
+            messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
+            return redirect('dashboard')
+        invoices = invoices.filter(branch=branch)
+        expenses = expenses.filter(branch=branch)
+    
+    if start_date and end_date:
+        invoices = invoices.filter(created_at__date__range=[start_date, end_date])
+        expenses = expenses.filter(date__range=[start_date, end_date])
+    
+    # التوتال العام
+    total_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
+    total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
+    net_profit = total_revenue - total_expenses
+    total_invoices = invoices.count()
+
+    # طرق الدفع
+    payment_breakdown = invoices.values('payment_method', 'bank__name').annotate(
+        total=Sum('final_total'),
+        count=Count('id')
+    ).order_by('-total')
+
+    # أداء الحلاقين
+    barber_performance = invoices.values('barber__first_name', 'barber__last_name').annotate(
+        total_sales=Sum('final_total'),
+        invoice_count=Count('id')
+    ).order_by('-total_sales')
+
+    # 🔥 إحصائيات الفروع
+    branch_stats = []
+    
+    if request.user.is_superuser:
+        all_branches = Branch.objects.filter(is_active=True)
+        for b in all_branches:
+            # فلترة الفواتير بالفرع والتاريخ
+            branch_invoices = Invoice.objects.filter(branch=b)
+            if start_date and end_date:
+                branch_invoices = branch_invoices.filter(created_at__date__range=[start_date, end_date])
+            
+            # كاش
+            branch_cash = branch_invoices.filter(payment_method='cash').aggregate(
+                total=Sum('final_total')
+            )['total'] or 0
+            
+            # بنك
+            branch_bank = branch_invoices.filter(payment_method='bank').aggregate(
+                total=Sum('final_total')
+            )['total'] or 0
+            
+            branch_total = branch_cash + branch_bank
+            
+            branch_stats.append({
+                'name': b.name,
+                'cash': branch_cash,
+                'bank': branch_bank,
+                'total': branch_total,
+            })
+    else:
+        if branch:
+            branch_invoices = invoices.filter(branch=branch)
+            
+            branch_cash = branch_invoices.filter(payment_method='cash').aggregate(
+                total=Sum('final_total')
+            )['total'] or 0
+            
+            branch_bank = branch_invoices.filter(payment_method='bank').aggregate(
+                total=Sum('final_total')
+            )['total'] or 0
+            
+            branch_total = branch_cash + branch_bank
+            
+            branch_stats.append({
+                'name': branch.name,
+                'cash': branch_cash,
+                'bank': branch_bank,
+                'total': branch_total,
+            })
+
+    # 🔥 حساب التوتال الكلي هنا - بعد ما branch_stats تتملى
+    total_cash_all = sum(stat['cash'] for stat in branch_stats)
+    total_bank_all = sum(stat['bank'] for stat in branch_stats)
+    grand_total_all = sum(stat['total'] for stat in branch_stats)
+
+    context = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'total_revenue': total_revenue,
+        'total_expenses': total_expenses,
+        'net_profit': net_profit,
+        'total_invoices': total_invoices,
+        'payment_breakdown': payment_breakdown,
+        'barber_performance': barber_performance,
+        'branch_stats': branch_stats,
+        'total_cash_all': total_cash_all,        # 🔥
+        'total_bank_all': total_bank_all,        # 🔥
+        'grand_total_all': grand_total_all,      # 🔥
+        'is_superuser': request.user.is_superuser,
     }
     return render(request, 'salon/reports.html', context)
 
@@ -433,8 +589,8 @@ def service_add(request):
     if request.method == 'POST':
         form = ServiceForm(request.POST)
         if form.is_valid():
-            service = form.save(commit=False)
-            service.branch = branch or Branch.objects.first()
+            service = form.save()
+            # service.branch = branch or Branch.objects.first()
             service.save()
             messages.success(request, f"✅ تم إضافة الخدمة {service.name} بنجاح")
             return redirect('service_list')

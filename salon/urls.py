@@ -31,6 +31,7 @@ urlpatterns = [
 
     # Reports
     path('reports/', views.reports, name='reports'),
+    path('reports/pdf/', views.reports_pdf, name='reports_pdf'),
 
     # Services
     path('services/', views.service_list, name='service_list'),
