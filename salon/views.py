@@ -83,28 +83,39 @@ def logout_view(request):
 
 @login_required
 def dashboard(request):
+    user = request.user
     branch = get_user_branch(request)
-    
-    # لو superuser → كل الفروع | لو عادي → فرعه بس
-    if request.user.is_superuser:
-        invoices = Invoice.objects.filter(created_at__date=timezone.now().date())
-        expenses = Expense.objects.filter(date=timezone.now().date())
-        # ... كل الاستعلامات بدون فلترة بالفرع
-    else:
-        if not branch:
-            messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
-            return redirect('login')
-        invoices = Invoice.objects.filter(branch=branch, created_at__date=timezone.now().date())
-        expenses = Expense.objects.filter(branch=branch, date=timezone.now().date())
-        # ... فلترة بالفرع
+    today = timezone.now().date()
 
-    today_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
-    today_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
-    
+    # Stats
+    if branch:
+        invoices_today = Invoice.objects.filter(branch=branch, created_at__date=today)
+        expenses_today = Expense.objects.filter(branch=branch, date=today)
+        waiting = Booking.objects.filter(branch=branch, status='waiting').count()
+        low_stock = Product.objects.filter(branch=branch, stock__lte=F('min_stock')).count()
+        # <-- هنا المشكلة: لازم يكون queue مش bookings
+        queue = Booking.objects.filter(branch=branch, status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
+    else:
+        invoices_today = Invoice.objects.filter(created_at__date=today)
+        expenses_today = Expense.objects.filter(date=today)
+        waiting = Booking.objects.filter(status='waiting').count()
+        low_stock = Product.objects.filter(stock__lte=F('min_stock')).count()
+        queue = Booking.objects.filter(status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
+
+    revenue = invoices_today.aggregate(total=Sum('final_total'))['total'] or 0
+    expenses = expenses_today.aggregate(total=Sum('amount'))['total'] or 0
+
+    # Recent invoices
+    recent = get_branch_queryset(request, Invoice)[:10]
+
     context = {
-        'today_revenue': today_revenue,
-        'today_expenses': today_expenses,
-        # ... باقي المتغيرات
+        'revenue': revenue,
+        'expenses': expenses,
+        'waiting': waiting,
+        'low_stock': low_stock,
+        'queue': queue,  # <-- لازم يكون 'queue'
+        'recent_invoices': recent,
+        'today': today,
     }
     return render(request, 'salon/dashboard.html', context)
 
@@ -224,28 +235,42 @@ def booking_list(request):
 @login_required
 def booking_add(request):
     branch = get_user_branch(request)
-    if not branch and not request.user.is_superuser:
-        messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
-        return redirect('dashboard')
+    
+    # تأكد إن فيه فرع
+    if not branch:
+        branch = Branch.objects.filter(is_active=True).first()
+    
+    if not branch:
+        messages.error(request, "❌ لا يوجد فرع نشط! الرجاء إنشاء فرع أولاً.")
+        return redirect('branch_add')  # أو redirect('dashboard')
 
     if request.method == 'POST':
         form = BookingForm(request.POST)
         if form.is_valid():
             booking = form.save(commit=False)
-            booking.branch = branch or Branch.objects.first()
-            last = Booking.objects.filter(branch=booking.branch, created_at__date=timezone.now().date()).order_by('queue_number').last()
+            booking.branch = branch  # <-- دلوقتي مضمون إنه مش None
+
+            # Generate queue number
+            today = timezone.now().date()
+            tomorrow = today + timezone.timedelta(days=1)
+            
+            last = Booking.objects.filter(
+                branch=booking.branch,
+                created_at__gte=today,
+                created_at__lt=tomorrow
+            ).order_by('queue_number').last()
+            
             booking.queue_number = (last.queue_number + 1) if last else 1
+
             booking.save()
             form.save_m2m()
             messages.success(request, f"✅ تم إضافة الحجز رقم {booking.queue_number} بنجاح")
             return redirect('booking_list')
     else:
         form = BookingForm()
-        if branch:
-            form.fields['barber'].queryset = User.objects.filter(is_barber=True, branch=branch)
+        form.fields['barber'].queryset = User.objects.filter(is_barber=True, branch=branch)
 
     return render(request, 'salon/booking_form.html', {'form': form})
-
 
 @login_required
 @require_POST
@@ -752,6 +777,49 @@ def user_add(request):
         'branches': branches,
     })
 
+
+@login_required
+def user_edit(request, pk):
+    if not request.user.can_users and not request.user.is_superuser:
+        messages.error(request, "❌ غير مصرح!")
+        return redirect('dashboard')
+
+    user = get_object_or_404(User, pk=pk)
+    
+    if request.method == 'POST':
+        form = UserForm(request.POST, instance=user)
+        if form.is_valid():
+            user = form.save(commit=False)
+            password = form.cleaned_data.get('password')
+            if password:
+                user.set_password(password)
+            user.save()
+            messages.success(request, f"✅ تم تعديل المستخدم {user.username}")
+            return redirect('user_list')
+    else:
+        form = UserForm(instance=user)
+
+    return render(request, 'salon/user_form.html', {'form': form, 'user_obj': user})
+
+
+@login_required
+@require_POST
+def user_delete(request, pk):
+    if not request.user.can_users and not request.user.is_superuser:
+        messages.error(request, "❌ غير مصرح!")
+        return redirect('dashboard')
+
+    user = get_object_or_404(User, pk=pk)
+    
+    # متسمحش يمسح نفسه
+    if user == request.user:
+        messages.error(request, "❌ لا يمكنك حذف نفسك!")
+        return redirect('user_list')
+    
+    username = user.username
+    user.delete()
+    messages.success(request, f"✅ تم حذف المستخدم {username}")
+    return redirect('user_list')
 
 # =============================================================================
 # BRANCHES

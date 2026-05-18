@@ -55,10 +55,15 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'salon_project_pkg.wsgi.application'
 
+# PostgreSQL Database
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'Nayel',
+        'USER': 'postgres',
+        'PASSWORD': 'Mar15',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 
@@ -76,17 +81,16 @@ USE_L10N = True
 USE_TZ = True
 
 STATIC_URL = '/static/'
-STATICFILES_DIRS = []
+STATICFILES_DIRS = []  # <-- ثبتنا ده (مش لازم تحط حاجة هنا في التطوير)
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # <-- للـ production
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Custom User Model
 AUTH_USER_MODEL = 'salon.User'
 
-# Login
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
