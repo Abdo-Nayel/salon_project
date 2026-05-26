@@ -9,28 +9,28 @@
         <div class="stat-card border-start border-4 border-primary">
             <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-money-bill-wave"></i></div>
             <h6 class="text-muted">إيرادات اليوم</h6>
-            <h3 class="fw-bold text-primary">{{ today_revenue|default:0 }} ج</h3>
+            <h3 class="fw-bold text-primary">{{ revenue|default:0 }} ج</h3>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card border-start border-4 border-danger">
             <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fas fa-receipt"></i></div>
             <h6 class="text-muted">مصروفات اليوم</h6>
-            <h3 class="fw-bold text-danger">{{ today_expenses|default:0 }} ج</h3>
+            <h3 class="fw-bold text-danger">{{ expenses|default:0 }} ج</h3>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card border-start border-4 border-warning">
             <div class="stat-icon bg-warning bg-opacity-10 text-warning"><i class="fas fa-users"></i></div>
             <h6 class="text-muted">في الانتظار</h6>
-            <h3 class="fw-bold text-warning">{{ current_stats.waiting_queue|default:0 }}</h3>
+            <h3 class="fw-bold text-warning">{{ waiting|default:0 }}</h3>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-card border-start border-4 border-info">
             <div class="stat-icon bg-info bg-opacity-10 text-info"><i class="fas fa-box"></i></div>
             <h6 class="text-muted">مخزون منخفض</h6>
-            <h3 class="fw-bold text-info">{{ current_stats.low_stock|default:0 }}</h3>
+            <h3 class="fw-bold text-info">{{ low_stock|default:0 }}</h3>
         </div>
     </div>
 </div>
