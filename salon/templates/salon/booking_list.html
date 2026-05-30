@@ -3,11 +3,21 @@
 {% block page_title %}الحجوزات{% endblock %}
 
 {% block content %}
+<!-- الهيدر يحتوي على زر "طباعة رقم" وزر "حجز جديد" -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="fw-bold">📅 الحجوزات</h3>
-    <a href="/bookings/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> حجز جديد</a>
+    <div class="d-flex gap-2">
+        <!-- زرار طباعة رقم جديد -->
+        <button onclick="printQueueNumber()" class="btn btn-info">
+            <i class="fas fa-ticket-alt me-2"></i> طباعة رقم
+        </button>
+        <a href="/bookings/add/" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i> حجز جديد
+        </a>
+    </div>
 </div>
 
+<!-- جدول الحجوزات القديم -->
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -41,11 +51,11 @@
                             <div class="btn-group">
                                 <a href="/booking/{{ booking.id }}/print/" target="_blank" class="btn btn-sm btn-info" title="طباعة الدور">🖨️</a>
                                 {% if booking.status == 'waiting' %}
-                                <button class="btn btn-sm btn-primary" onclick="updateStatus({{ booking.id }}, 'in_progress')">▶️</button>
+                                <button class="btn btn-sm btn-primary" onclick="updateStatus('{{ booking.id }}', 'in_progress')">▶️</button>
                                 {% elif booking.status == 'in_progress' %}
-                                <button class="btn btn-sm btn-success" onclick="updateStatus({{ booking.id }}, 'completed')">✓</button>
+                                <button class="btn btn-sm btn-success" onclick="updateStatus('{{ booking.id }}', 'completed')">✓</button>
                                 {% endif %}
-                                <button class="btn btn-sm btn-danger" onclick="updateStatus({{ booking.id }}, 'cancelled')">✕</button>
+                                <button class="btn btn-sm btn-danger" onclick="updateStatus('{{ booking.id }}', 'cancelled')">✕</button>
                             </div>
                         </td>
                     </tr>
@@ -58,7 +68,61 @@
     </div>
 </div>
 
+<!-- الـ Modal المعدل ليطابق التصميم في image_699ba9.png تماماً -->
+<div class="modal fade" id="queueNumberModal" tabindex="-1">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-body receipt-container text-center">
+                
+                <!-- اسم الصالون الرئيسي -->
+                <h2 class="receipt-title fw-bold">Salon Pro</h2>
+                <hr class="receipt-line">
+                
+                <!-- ترويسة رقم الدور -->
+                <div class="receipt-subtitle text-muted mb-1">رقم الدور</div>
+                
+                <!-- الرقم الكبير في المنتصف -->
+                <div class="receipt-number" id="queueNumber">--</div>
+                <hr class="receipt-line">
+                
+                <!-- تفاصيل العميل والفرع -->
+                <div class="receipt-details mb-2">
+                    <span class="text-muted">العميل:</span> <strong id="queueCustomer" class="fs-5">عام</strong>
+                    <br>
+                    <span class="text-muted small" id="queueBranch">الفرع الرئيسي</span>
+                </div>
+                
+                <!-- خط فاصل منقط -->
+                <hr class="receipt-dashed-line">
+                
+                <!-- الوقت والتاريخ -->
+                <div class="receipt-time text-muted small mb-3">
+                    <span id="queueTime">--</span> &nbsp; <span id="queueDate">--</span>
+                </div>
+                
+                <!-- رسالة الترحيب السفلية -->
+                <div class="receipt-footer text-muted small">
+                    <p class="mb-1 fw-semibold">شكراً لزيارتكم!</p>
+                    <p class="mb-0">يرجى الانتظار حتى يتم استدعائكم</p>
+                </div>
+                
+            </div>
+            <!-- أزرار التحكم السفلية داخل المودال مخصصة لتشبه الشريط السفلي -->
+            <div class="modal-footer justify-content-center bg-light border-0 py-3 implementation-controls">
+                <button onclick="window.print()" class="btn btn-outline-dark px-4 py-2 me-2">
+                    <i class="fas fa-print me-1"></i> طباعة الفاتورة
+                </button>
+                <button type="button" class="btn btn-purple px-4 py-2 text-white" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i> إغلاق
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- الأكواد البرمجية البرمجية (JavaScript) -->
 <script>
+// تحديث حالة الحجز (القديم)
 function updateStatus(id, status) {
     fetch(`/bookings/${id}/status/`, {
         method: 'POST',
@@ -71,5 +135,103 @@ function updateStatus(id, status) {
     .then(r => r.json())
     .then(data => { if (data.success) location.reload(); });
 }
+
+// جلب بيانات الرقم الجديد وتعبئتها في التذكرة (الجديد)
+function printQueueNumber() {
+    fetch('/queue/print-number/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('queueBranch').textContent = data.branch || 'الفرع الرئيسي';
+            document.getElementById('queueNumber').textContent = data.number;
+            document.getElementById('queueCustomer').textContent = data.customer_name || 'عميل خارجي';
+            document.getElementById('queueDate').textContent = data.date;
+            document.getElementById('queueTime').textContent = data.time;
+            
+            new bootstrap.Modal(document.getElementById('queueNumberModal')).show();
+        } else {
+            alert('❌ ' + data.error);
+        }
+    });
+}
 </script>
+
+<!-- تنسيقات الـ CSS المخصصة للمظهر والطباعة الحرارية -->
+<style>
+/* تنسيق التذكرة داخل المتصفح ليطابق الصورة */
+.receipt-container {
+    padding: 30px 40px;
+    background-color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.receipt-title {
+    font-size: 28px;
+    letter-spacing: 0.5px;
+    color: #000;
+}
+.receipt-line {
+    border-top: 2px solid #000 !important;
+    opacity: 1 !important;
+    margin: 15px 0;
+}
+.receipt-dashed-line {
+    border-top: 1px dashed #999 !important;
+    opacity: 0.8 !important;
+    margin: 15px 0;
+}
+.receipt-number {
+    font-size: 80px;
+    font-weight: 900;
+    color: #4e73df;
+    line-height: 1;
+    margin: 10px 0;
+}
+.btn-purple {
+    background-color: #6f42c1;
+}
+.btn-purple:hover {
+    background-color: #59339d;
+}
+
+/* التنسيق الصارم عند أمر الطباعة (window.print) */
+@media print {
+    /* إخفاء كافة عناصر الموقع بالكامل */
+    body * { 
+        visibility: hidden; 
+    }
+    /* إظهار حاوية التذكرة فقط وبشكل نقي */
+    #queueNumberModal, #queueNumberModal * { 
+        visibility: visible; 
+    }
+    #queueNumberModal { 
+        position: absolute; 
+        left: 0; 
+        top: 0; 
+        width: 100%; 
+        box-shadow: none !important;
+    }
+    /* إخفاء خلفية المودال الرمادية والأزرار تماماً أثناء الطباعة */
+    .modal-backdrop, .implementation-controls, .modal-footer, .btn-close { 
+        display: none !important; 
+    }
+    .modal-content {
+        border: none !important;
+        box-shadow: none !important;
+    }
+    /* ضبط الهوامش لتتناسب مع الطابعات الحرارية الصغيرة (Receipt Printers) */
+    @page {
+        margin: 0;
+    }
+    .receipt-container {
+        padding: 10px;
+        width: 100%;
+    }
+}
+</style>
 {% endblock %}

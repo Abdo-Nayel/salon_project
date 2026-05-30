@@ -314,6 +314,28 @@ class InvoiceItem(models.Model):
 
 
 # =============================================================================
+# DailyQueueNumber
+# =============================================================================
+
+class DailyQueueNumber(models.Model):
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='daily_numbers')
+    date = models.DateField(default=timezone.now)
+    last_number = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        unique_together = ['branch', 'date']
+        verbose_name = "رقم الدور اليومي"
+        verbose_name_plural = "أرقام الدور اليومية"
+    
+    def __str__(self):
+        return f"{self.branch} - {self.date} - #{self.last_number}"
+    
+    def get_next_number(self):
+        self.last_number += 1
+        self.save()
+        return self.last_number
+
+# =============================================================================
 # BOOKINGS
 # =============================================================================
 

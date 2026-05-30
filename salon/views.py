@@ -13,6 +13,16 @@ from django.views.decorators.http import require_POST
 from decimal import Decimal
 import json
 
+
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+import requests
+from django.views.decorators.csrf import csrf_exempt
+
+
 from django_weasyprint import WeasyTemplateView
 from django.http import HttpResponse
 from django.template.loader import render_to_string
@@ -22,7 +32,7 @@ import os
 
 from .models import (
     Branch, User, Service, Product, Bank, Customer,
-    Invoice, InvoiceItem, Booking, Expense, StockMovement
+    Invoice, InvoiceItem, Booking, Expense, StockMovement , DailyQueueNumber
 )
 from .forms import (
     LoginForm, UserForm, ServiceForm, ProductForm,
@@ -118,6 +128,53 @@ def dashboard(request):
         'today': today,
     }
     return render(request, 'salon/dashboard.html', context)
+
+
+# =============================================================================
+# send_whatsapp_invoice
+# =============================================================================
+
+def send_whatsapp_invoice(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            phone = data.get('phone', '').replace(" ", "")
+            invoice_number = data.get('invoice_number', '')
+            invoice_id = data.get('invoice_id', '')
+
+            # تعديل الكود الدولي لرقم العميل تلقائياً (مثال لمصر)
+            if phone.startswith('0'):
+                phone = '2' + phone
+                
+            # نص الرسالة الاحترافي
+            message = f"💈 *Salon Pro*\n\nعزيزي العميل، تم إصدار فاتورتك بنجاح.\n📄 فاتورة رقم: #{invoice_number}\n🔗 لمشاهدة الفاتورة: {request.build_absolute_uri(f'/invoice/{invoice_id}/receipt/')}\n\nشكراً لزيارتك! 🙏"
+
+            # بيانات حساب التوثيق الخاص بالرقم الثابت (تأخذه مجاناً من التسجيل في موقع ultramsg.com أو أي بوابة أخرى)
+            ULTRAMSG_INSTANCE = "instanceXXXXX" # ضع رقم الـ instance هنا
+            ULTRAMSG_TOKEN = "your_token_here"   # ضع الـ Token هنا
+
+            url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE}/messages/chat"
+            
+            payload = {
+                "token": ULTRAMSG_TOKEN,
+                "to": phone,
+                "body": message,
+                "priority": 10
+            }
+            
+            headers = {'content-type': 'application/x-www-form-urlencoded'}
+            response = requests.post(url, data=payload, headers=headers)
+            res_data = response.json()
+
+            if res_data.get('sent') == 'true' or 'id' in res_data:
+                return JsonResponse({"success": True})
+            else:
+                return JsonResponse({"success": False, "error": "لم تقبل البوابة إرسال الرسالة"})
+
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+            
+    return JsonResponse({"success": False, "error": "Method not allowed"})
 
 
 # =============================================================================
@@ -290,6 +347,38 @@ def booking_status(request, pk):
     booking.save()
     return JsonResponse({'success': True})
 
+
+
+@login_required
+@require_POST
+def print_queue_number(request):
+    """Generate and print a new queue number without booking data"""
+    branch = get_user_branch(request)
+    if not branch:
+        branch = Branch.objects.filter(is_active=True).first()
+    
+    if not branch:
+        return JsonResponse({'success': False, 'error': 'لا يوجد فرع'})
+    
+    today = timezone.now().date()
+    
+    # Get or create daily counter
+    daily_counter, created = DailyQueueNumber.objects.get_or_create(
+        branch=branch,
+        date=today,
+        defaults={'last_number': 0}
+    )
+    
+    # Get next number
+    next_number = daily_counter.get_next_number()
+    
+    return JsonResponse({
+        'success': True,
+        'number': next_number,
+        'branch': branch.name,
+        'date': today.strftime('%Y-%m-%d'),
+        'time': timezone.now().strftime('%H:%M')
+    })
 
 # =============================================================================
 # INVENTORY
@@ -706,22 +795,43 @@ def settings_view(request):
 # USERS
 # =============================================================================
 
+# دالة مساعدة للتحقق من صلاحية المستخدم على إدارة المستخدمين وحماية الفروع
+def check_user_permission(request, target_user=None):
+    # إذا لم يكن سوبر يوزر وليس لديه صلاحية إدارة المستخدمين -> مرفوض
+    if not request.user.is_superuser and not getattr(request.user, 'can_users', False):
+        return False
+    
+    # حماية الفروع: لو مش سوبر يوزر وبيحاول يوصل لمستخدم في فرع تاني -> مرفوض
+    if target_user and not request.user.is_superuser:
+        user_branch = get_user_branch(request)
+        if target_user.branch != user_branch:
+            return False
+            
+    return True
+
+
 @login_required
 def user_list(request):
-    if not request.user.can_users and not request.user.is_superuser:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+    if not check_user_permission(request):
+        messages.error(request, "⛔ ليس لديك صلاحية الوصول لإدارة المستخدمين")
         return redirect('dashboard')
 
-    users = User.objects.all() if request.user.is_superuser else User.objects.filter(branch=get_user_branch(request))
+    # السوبر يوزر يرى الجميع، مستخدم الفرع يرى مستخدمي فرعه فقط
+    if request.user.is_superuser:
+        users = User.objects.all()
+    else:
+        users = User.objects.filter(branch=get_user_branch(request))
+        
     return render(request, 'salon/user_list.html', {'users': users})
 
 
 @login_required
 def user_add(request):
-    if not request.user.can_users and not request.user.is_superuser:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+    if not check_user_permission(request):
+        messages.error(request, "⛔ ليس لديك صلاحية الوصول لإضافة مستخدمين")
         return redirect('dashboard')
 
+    # تحديد الفروع المتاحة بناءً على الصلاحية
     if request.user.is_superuser:
         branches = Branch.objects.all()
     else:
@@ -729,46 +839,26 @@ def user_add(request):
         branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
 
     if request.method == 'POST':
-        print("=" * 50)
-        print("POST DATA:", dict(request.POST))
-        
         form = UserForm(request.POST)
-        print("FORM VALID:", form.is_valid())
-        
-        if not form.is_valid():
-            print("FORM ERRORS:", form.errors)
-            messages.error(request, f"❌ أخطاء: {form.errors}")
-        else:
-            print("CLEANED DATA:", form.cleaned_data)
-            
+        if form.is_valid():
             try:
                 user = form.save(commit=False)
-                print("USER BEFORE SAVE - ID:", user.id, "USERNAME:", user.username)
                 
+                # إجبار حيازة الفرع لو مش سوبر يوزر منعاً للتلاعب بالـ HTML
+                if not request.user.is_superuser:
+                    user.branch = get_user_branch(request)
+                    
                 password = form.cleaned_data.get('password')
-                print("PASSWORD:", password)
-                
                 if password:
                     user.set_password(password)
-                    print("PASSWORD SET")
                 
                 user.save()
-                print("USER AFTER SAVE - ID:", user.id)
-                
-                # تحقق من اليوزر في الداتا بيز
-                from django.contrib.auth import get_user_model
-                User = get_user_model()
-                exists = User.objects.filter(username=user.username).exists()
-                print("USER EXISTS IN DB:", exists)
-                
                 messages.success(request, f"✅ تم إنشاء المستخدم {user.username} بنجاح")
-                return redirect('settings')
-                
+                return redirect('user_list') # تم التعديل ليوجه لقائمة اليوزرز بدلاً من سيتنج الكبيرة
             except Exception as e:
-                import traceback
-                print("ERROR:", str(e))
-                print(traceback.format_exc())
-                messages.error(request, f"❌ خطأ: {str(e)}")
+                messages.error(request, f"❌ خطأ أثناء الحفظ: {str(e)}")
+        else:
+            messages.error(request, f"❌ يرجى تصحيح الأخطاء: {form.errors}")
     else:
         form = UserForm()
 
@@ -780,45 +870,60 @@ def user_add(request):
 
 @login_required
 def user_edit(request, pk):
-    if not request.user.can_users and not request.user.is_superuser:
-        messages.error(request, "❌ غير مصرح!")
-        return redirect('dashboard')
-
-    user = get_object_or_404(User, pk=pk)
+    user_obj = get_object_or_404(User, pk=pk)
     
+    # التحقق من صلاحية التعديل على هذا المستخدم بالذات وفروعه
+    if not check_user_permission(request, target_user=user_obj):
+        messages.error(request, "⛔ غير مصرح لك بتعديل هذا المستخدم!")
+        return redirect('user_list')
+
+    # جلب الفروع هنا أيضاً (حل مشكلة عدم عمل الـ Edit بسبب حقل الفرع في التمبليت)
+    if request.user.is_superuser:
+        branches = Branch.objects.all()
+    else:
+        user_branch = get_user_branch(request)
+        branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
+
     if request.method == 'POST':
-        form = UserForm(request.POST, instance=user)
+        form = UserForm(request.POST, instance=user_obj)
         if form.is_valid():
             user = form.save(commit=False)
             password = form.cleaned_data.get('password')
             if password:
                 user.set_password(password)
             user.save()
-            messages.success(request, f"✅ تم تعديل المستخدم {user.username}")
+            messages.success(request, f"✅ تم تعديل المستخدم {user.username} بنجاح")
             return redirect('user_list')
+        else:
+            messages.error(request, f"❌ خطأ في التعديل: {form.errors}")
     else:
-        form = UserForm(instance=user)
+        form = UserForm(instance=user_obj)
 
-    return render(request, 'salon/user_form.html', {'form': form, 'user_obj': user})
+    return render(request, 'salon/user_form.html', {
+        'form': form, 
+        'user_obj': user_obj,
+        'branches': branches # تم تمرير الفروع لضمان استقرار الفورم في التعديل
+    })
 
 
 @login_required
 @require_POST
 def user_delete(request, pk):
-    if not request.user.can_users and not request.user.is_superuser:
-        messages.error(request, "❌ غير مصرح!")
-        return redirect('dashboard')
-
-    user = get_object_or_404(User, pk=pk)
+    user_obj = get_object_or_404(User, pk=pk)
     
-    # متسمحش يمسح نفسه
-    if user == request.user:
-        messages.error(request, "❌ لا يمكنك حذف نفسك!")
+    # التحقق من صلاحية الحذف على هذا المستخدم وفروعه
+    if not check_user_permission(request, target_user=user_obj):
+        messages.error(request, "⛔ غير مصرح لك بحذف هذا المستخدم!")
+        return redirect('user_list')
+
+    # منع المستخدم من ان يحذف حسابه الحالي الذي يعمل به
+    if user_obj == request.user:
+        messages.error(request, "❌ لا يمكنك حذف حسابك الحالي الذي تسجل به الدخول!")
         return redirect('user_list')
     
-    username = user.username
-    user.delete()
-    messages.success(request, f"✅ تم حذف المستخدم {username}")
+    username = user_obj.username
+    user_obj.delete()
+    messages.success(request, f"✅ تم حذف المستخدم {username} نهائياً")
     return redirect('user_list')
 
 # =============================================================================

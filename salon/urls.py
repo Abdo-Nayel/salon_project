@@ -15,11 +15,13 @@ urlpatterns = [
     # POS
     path('pos/', views.pos, name='pos'),
     path('invoice/<int:pk>/print/', views.invoice_print, name='invoice_print'),
+    path('pos/send-whatsapp/', views.send_whatsapp_invoice, name='send_whatsapp_invoice'),
 
     # Bookings
     path('bookings/', views.booking_list, name='booking_list'),
     path('bookings/add/', views.booking_add, name='booking_add'),
     path('bookings/<int:pk>/status/', views.booking_status, name='booking_status'),
+    path('queue/print-number/', views.print_queue_number, name='print_queue_number'),
 
     # Inventory
     path('inventory/', views.inventory, name='inventory'),
