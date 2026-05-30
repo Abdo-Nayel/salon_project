@@ -54,18 +54,16 @@ def get_user_branch(request):
 def get_branch_queryset(request, model, order_by='-created_at'):
     """Get queryset filtered by user branch"""
     branch = get_user_branch(request)
-    if branch:
-        # لو بنفلتر موديل الخدمة (Service)
-        if model.__name__ == 'Service':
-            # بما إن الـ category مش مربوطة بالفرع كعلاقة ممتدة، بنجيب الـ categories التابعة للفرع الأول
-            # أو بنفلتر باسم الحقل المباشر جوه الـ category لو كان متسجل كـ branch
-            return model.objects.filter(category__branch_id=branch.id).order_by(order_by)
+    
+    # لو الموديل المطلوب هو الخدمة، رجع كل الخدمات لأنها غير مقسمة بفروع في قاعدة البيانات
+    if model.__name__ == 'Service':
+        return model.objects.all().order_by(order_by)
         
-        # لباقي الموديلات (مثل المبيعات، الفواتير، التقارير)
+    if branch:
+        # لباقي الموديلات اللي فيها فروع زي الفواتير والمبيعات
         try:
             return model.objects.filter(branch=branch).order_by(order_by)
         except Exception:
-            # حل احتياطي ذكي لو الموديل لا يحتوي على حقل branch مباشرة
             return model.objects.all().order_by(order_by)
             
     return model.objects.all().order_by(order_by)
