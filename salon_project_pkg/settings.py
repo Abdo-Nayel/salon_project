@@ -55,17 +55,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'salon_project_pkg.wsgi.application'
 
-# PostgreSQL Database
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'Nayel',
-#         'USER': 'postgres',
-#         'PASSWORD': 'Mar15',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
+
 
 DATABASES = {
     'default': {
