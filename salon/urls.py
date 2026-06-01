@@ -16,6 +16,7 @@ urlpatterns = [
     path('pos/', views.pos, name='pos'),
     path('invoice/<int:pk>/print/', views.invoice_print, name='invoice_print'),
     path('pos/send-whatsapp/', views.send_whatsapp_invoice, name='send_whatsapp_invoice'),
+    path('send-whatsapp/', views.send_whatsapp_invoice, name='send_whatsapp_invoice'),
 
     # Bookings
     path('bookings/', views.booking_list, name='booking_list'),

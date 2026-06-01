@@ -12,7 +12,8 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from decimal import Decimal
 import json
-
+from django.conf import settings
+from django.views.decorators.csrf import csrf_protect
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
@@ -144,6 +145,7 @@ def dashboard(request):
 # send_whatsapp_invoice
 # =============================================================================
 
+@csrf_protect
 def send_whatsapp_invoice(request):
     if request.method == "POST":
         try:
@@ -152,34 +154,40 @@ def send_whatsapp_invoice(request):
             invoice_number = data.get('invoice_number', '')
             invoice_id = data.get('invoice_id', '')
 
-            # تعديل الكود الدولي لرقم العميل تلقائياً (مثال لمصر)
+            api_key = getattr(settings, "WHATSAPP_API_KEY", None)
+            api_url = getattr(settings, "WHATSAPP_API_URL", None)
+            
             if phone.startswith('0'):
                 phone = '2' + phone
                 
-            # نص الرسالة الاحترافي
             message = f"💈 *Salon Pro*\n\nعزيزي العميل، تم إصدار فاتورتك بنجاح.\n📄 فاتورة رقم: #{invoice_number}\n🔗 لمشاهدة الفاتورة: {request.build_absolute_uri(f'/invoice/{invoice_id}/receipt/')}\n\nشكراً لزيارتك! 🙏"
 
-            # بيانات حساب التوثيق الخاص بالرقم الثابت (تأخذه مجاناً من التسجيل في موقع ultramsg.com أو أي بوابة أخرى)
-            ULTRAMSG_INSTANCE = "instanceXXXXX" # ضع رقم الـ instance هنا
-            ULTRAMSG_TOKEN = "your_token_here"   # ضع الـ Token هنا
-
-            url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE}/messages/chat"
-            
+            # 🎯 الـتـعـديـل الـقـاطـع: أسماء الـ Keys كما هي في قاعدة بيانات السيرفر بالظبط
             payload = {
-                "token": ULTRAMSG_TOKEN,
-                "to": phone,
+                "to_number": phone,   # اتغيرت من to لـ to_number
                 "body": message,
-                "priority": 10
+                "project_id": 29      # 👈 ضيف الـ id بتاع الحساب اللي أخدت الكي بتاعه (زي ما ظاهر في الـ pgAdmin)
+            }
+
+            headers = {
+                "Authorization": f"Token {api_key}",
+                "Content-Type": "application/json",
+                "Host": "laperla.e-jewelrybysoftwarehouse.com", 
+                "Origin": "https://laperla.e-jewelrybysoftwarehouse.com"
             }
             
-            headers = {'content-type': 'application/x-www-form-urlencoded'}
-            response = requests.post(url, data=payload, headers=headers)
-            res_data = response.json()
-
-            if res_data.get('sent') == 'true' or 'id' in res_data:
+            url = f"{api_url}/accounts/messages/"
+            
+            # الإرسال كـ JSON ليفهمه السيرفر تماماً
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+            
+            if response.status_code in [200, 201]:
                 return JsonResponse({"success": True})
             else:
-                return JsonResponse({"success": False, "error": "لم تقبل البوابة إرسال الرسالة"})
+                return JsonResponse({
+                    "success": False, 
+                    "error": f"السيرفر رد بكود {response.status_code}: {response.text}"
+                })
 
         except Exception as e:
             return JsonResponse({"success": False, "error": str(e)})

@@ -5,41 +5,120 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Salon Pro{% endblock %}</title>
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    
     <style>
-        * { font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif; }
-        body { background: #f8f9fa; }
-        .sidebar {
-            position: fixed; right: 0; top: 0; width: 260px; height: 100vh;
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-            padding: 20px 15px; color: white; z-index: 1000;
-            box-shadow: -5px 0 20px rgba(0,0,0,0.1);
+        * { 
+            font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif; 
+            box-sizing: border-box;
         }
-        .sidebar h4 { font-weight: 800; margin-bottom: 30px; text-align: center; }
+        body { 
+            background: #f8f9fa; 
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Sidebar الرئيسي */
+        .sidebar {
+            position: fixed; 
+            right: 0; 
+            top: 0; 
+            width: 260px; 
+            height: 100vh;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            padding: 20px 15px; 
+            color: white; 
+            z-index: 1050;
+            box-shadow: -5px 0 20px rgba(0,0,0,0.1);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+        }
+        .sidebar h4 { font-weight: 800; margin-bottom: 30px; text-align: center; white-space: nowrap; }
         .sidebar a {
-            color: rgba(255,255,255,0.9); text-decoration: none;
-            display: block; padding: 12px 15px; border-radius: 10px;
-            margin-bottom: 5px; transition: all 0.3s; font-weight: 500;
+            color: rgba(255,255,255,0.9); 
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            padding: 12px 15px; 
+            border-radius: 10px;
+            margin-bottom: 5px; 
+            transition: all 0.3s; 
+            font-weight: 500;
             font-size: 0.95rem;
+            white-space: nowrap;
         }
         .sidebar a:hover, .sidebar a.active {
-            background: rgba(255,255,255,0.2); color: white;
+            background: rgba(255,255,255,0.2); 
+            color: white;
             transform: translateX(-5px);
         }
-        .sidebar a i { margin-right: 10px; width: 20px; text-align: center; }
-        .main { margin-right: 280px; margin-left: 0; padding: 25px; min-height: 100vh; }
-        .topbar {
-            background: white; border-radius: 15px; padding: 15px 25px;
-            margin-bottom: 25px; box-shadow: 0 2px 15px rgba(0,0,0,0.08);
-            display: flex; justify-content: space-between; align-items: center;
+        .sidebar a i { margin-left: 10px; width: 20px; text-align: center; flex-shrink: 0; }
+        
+        /* طبقة تظليل خلفية للموبايل عند فتح القائمة */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 1040;
+            display: none;
         }
+        .sidebar-overlay.show { display: block; }
+
+        /* منطقة المحتوى الرئيسي */
+        .main { 
+            margin-right: 260px; 
+            margin-left: 0; 
+            padding: 25px; 
+            min-height: 100vh; 
+            width: calc(100% - 260px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* التوب بار العلوي */
+        .topbar {
+            background: white; 
+            border-radius: 15px; 
+            padding: 15px 25px;
+            margin-bottom: 25px; 
+            box-shadow: 0 2px 15px rgba(0,0,0,0.08);
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        
+        /* زر الهامبرغر للقائمة */
+        .toggle-sidebar-btn {
+            background: transparent;
+            border: none;
+            color: #667eea;
+            font-size: 1.3rem;
+            cursor: pointer;
+            display: none; /* مخفي في الشاشات الكبيرة */
+            align-items: center;
+            justify-content: center;
+            padding: 5px 10px;
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+        .toggle-sidebar-btn:hover {
+            background: #f1f3f5;
+        }
+
         .card { border-radius: 15px; border: none; box-shadow: 0 2px 15px rgba(0,0,0,0.08); }
+        
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none; border-radius: 10px; padding: 10px 20px; font-weight: 600;
         }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }
+        
         .stat-card {
             background: white; border-radius: 15px; padding: 20px;
             box-shadow: 0 2px 15px rgba(0,0,0,0.08); transition: all 0.3s;
@@ -51,22 +130,58 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 1.5rem; margin-bottom: 10px;
         }
+        
         .table th { font-weight: 700; color: #666; border-bottom: 2px solid #f0f0f0; }
         .badge { padding: 8px 12px; border-radius: 8px; font-weight: 600; }
         .form-control, .form-select { border-radius: 10px; padding: 12px 15px; border: 2px solid #e9ecef; }
         .form-control:focus, .form-select:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-        @media (max-width: 768px) {
-            .sidebar { width: 70px; }
-            .sidebar a span { display: none; }
-            .main { margin-right: 90px; }
+        
+        /* ==========================================================================
+           استعلامات الوسائط التكيفية لجميع الشاشات (Responsive Breakpoints)
+           ========================================================================== */
+
+        /* الأجهزة اللوحية والهواتف الذكية (أقل من 992 بكسل) */
+        @media (max-width: 992px) {
+            .toggle-sidebar-btn {
+                display: flex; /* إظهار زر فتح القائمة */
+            }
+            .sidebar { 
+                transform: translateX(100%); /* إخفاء القائمة تماماً خارج حدود الشاشة يميناً */
+            }
+            .sidebar.show {
+                transform: translateX(0); /* إظهار القائمة بسحبها للداخل عند الضغط */
+            }
+            .main { 
+                margin-right: 0 !important; 
+                width: 100% !important; 
+                padding: 15px;
+            }
+        }
+
+        /* الهواتف الصغيرة جداً (أقل من 576 بكسل) */
+        @media (max-width: 576px) {
+            .topbar {
+                padding: 12px 15px;
+                margin-bottom: 20px;
+            }
+            .topbar h5 {
+                font-size: 1rem;
+            }
+            .topbar .user-name {
+                display: none; /* إخفاء الاسم النصي في الموبايل لتوفير مساحة وتفادي التداخل */
+            }
+            .main {
+                padding: 10px;
+            }
         }
     </style>
     {% block extra_css %}{% endblock %}
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
-<base target="_blank">
 </head>
 <body>
-    <div class="sidebar">
+
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebarMenu()"></div>
+
+    <div class="sidebar" id="sidebarMenu">
         <h4>💈 Salon Pro</h4>
         
         <a href="/" class="{% if request.path == '/' %}active{% endif %}"><i class="fas fa-home"></i> <span>الرئيسية</span></a>
@@ -108,9 +223,14 @@
 
     <div class="main">
         <div class="topbar">
-            <h5 class="m-0 fw-bold">{% block page_title %}Dashboard{% endblock %}</h5>
+            <div class="d-flex align-items-center gap-2">
+                <button class="toggle-sidebar-btn" onclick="toggleSidebarMenu()" aria-label="Toggle Navigation">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h5 class="m-0 fw-bold">{% block page_title %}Dashboard{% endblock %}</h5>
+            </div>
             <div class="d-flex align-items-center gap-3">
-                <span class="text-muted">{{ request.user.get_full_name|default:request.user.username }}</span>
+                <span class="text-muted user-name">{{ request.user.get_full_name|default:request.user.username }}</span>
                 <span class="badge bg-primary">{{ request.user.branch|default:"All Branches" }}</span>
             </div>
         </div>
@@ -126,9 +246,17 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
-    // FORCE ALL LINKS TO OPEN IN SAME TAB
-    // This removes any <base target="_blank"> and forces _self
+    // وظيفة إظهار وإخفاء القائمة الجانبية للشاشات الصغيرة
+    function toggleSidebarMenu() {
+        const sidebar = document.getElementById('sidebarMenu');
+        const overlay = document.getElementById('sidebarOverlay');
+        sidebar.classList.toggle('show');
+        overlay.classList.toggle('show');
+    }
+
+    // إزالة عناصر الـ Base وحفظ الروابط لتفتح في نفس التبويب تلقائياً
     (function() {
         var bases = document.querySelectorAll('base[target="_blank"]');
         bases.forEach(function(base) { base.remove(); });
@@ -146,15 +274,4 @@
     })();
     </script>
 </body>
-<script>
-(function () {
-    document.querySelectorAll('a').forEach(link => {
-        const href = link.getAttribute('href');
-
-        if (href && !href.match(/^https?:\/\//)) {
-            link.setAttribute('target', '_self');
-        }
-    });
-})();
-</script>
 </html>
