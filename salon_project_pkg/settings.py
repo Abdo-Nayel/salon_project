@@ -106,6 +106,6 @@ MESSAGE_TAGS = {
 }
 
 
-WHATSAPP_API_URL = "https://whatsapp.erpshbysoftwarehouse.com"
-WHATSAPP_API_KEY = "EepZoR2v3ZxZcoxML31yny7pOMJ8zsOhETIhNEUPYxktH0aE5KLqvD87HujZeWgU"
-WHATSAPP_INSTANCE = "01029029992"
+# WHATSAPP_API_URL = "https://whatsapp.erpshbysoftwarehouse.com"
+# WHATSAPP_API_KEY = "EepZoR2v3ZxZcoxML31yny7pOMJ8zsOhETIhNEUPYxktH0aE5KLqvD87HujZeWgU"
+# WHATSAPP_INSTANCE = "01029029992"
