@@ -59,8 +59,12 @@ WSGI_APPLICATION = 'salon_project_pkg.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'LOCATION': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'Nayel',
+        'USER': 'postgres',
+        'PASSWORD': 'Mar15',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 

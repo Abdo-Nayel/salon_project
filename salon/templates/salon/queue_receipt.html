@@ -6,76 +6,124 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دور الحجز - {{ config.shop_name }}</title>
     <style>
+        /* ==========================================================================
+           إعدادات الطباعة الحرارية الصارمة (80mm) لمتصفحات Chrome و Edge
+           ========================================================================== */
         @media print {
-            @page { size: 80mm auto; margin: 0; }
-            body { width: 80mm; margin: 0; padding: 0; }
-            .no-print { display: none !important; }
+            @page { 
+                size: 70mm auto; 
+                margin: 0mm !important; 
+            }
+            html, body {
+                width: 70mm !important;
+                background: #fff !important;
+                color: #000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            body {
+                padding: 4mm 5mm !important; /* هوامش متزنة لمنع التفاف الكلمات عند الأطراف */
+            }
+            .no-print { 
+                display: none !important; 
+            }
         }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        /* تنسيقات العرض العام (على الشاشة والطباعة) */
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
         body {
             font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
             width: 80mm;
             margin: 0 auto;
-            padding: 8mm 4mm;
+            padding: 8mm 5mm;
             background: #fff;
             color: #000;
             font-size: 11pt;
-            line-height: 1.5;
+            line-height: 1.4;
+            padding-bottom: 80px; /* مسافة لحماية تداخل شريط التحكم السفلي */
         }
         .receipt {
             text-align: center;
+            width: 100%;
         }
         .shop-name {
-            font-size: 14pt;
+            font-size: 16pt;
             font-weight: 800;
             margin-bottom: 2mm;
-            letter-spacing: 0.5px;
+            text-transform: uppercase;
         }
         .shop-info {
-            font-size: 8pt;
-            color: #555;
-            margin-bottom: 3mm;
+            font-size: 9pt;
+            color: #444;
+            margin-bottom: 2mm;
+            font-weight: 600;
         }
         .divider {
             border: none;
-            border-top: 1px dashed #999;
-            margin: 3mm 0;
+            border-top: 1px dashed #000;
+            margin: 4mm 0;
         }
         .divider-thick {
+            border: none;
             border-top: 2px solid #000;
+            margin: 4mm 0;
         }
         .label {
-            font-size: 10pt;
-            color: #666;
-            margin-top: 2mm;
+            font-size: 12pt;
+            color: #222;
+            font-weight: 700;
+            margin-top: 1mm;
         }
         .queue-number {
-            font-size: 42pt;
+            font-size: 58pt; /* تكبير الرقم ليكون واضحاً جداً وفي المنتصف */
             font-weight: 900;
-            color: #667eea;
-            margin: 4mm 0;
-            letter-spacing: 3px;
+            color: #000; /* نقي أسود للطباعة الحرارية المثالية */
+            margin: 2mm 0;
             line-height: 1;
         }
-        .info-row {
-            font-size: 9pt;
-            margin: 1.5mm 0;
-            text-align: right;
-            padding: 0 2mm;
+        
+        /* ضبط هيكل صفوف البيانات لتوزيعها على الأطراف وبحجم خط واضح */
+        .info-table {
+            width: 100%;
+            margin: 4mm 0;
+            border-collapse: collapse;
         }
-        .info-label { color: #888; }
-        .info-value { font-weight: 700; }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2mm 1mm;
+            font-size: 11pt;
+        }
+        .info-label { 
+            color: #555; 
+            font-weight: 600;
+        }
+        .info-value { 
+            font-weight: 800; 
+            color: #000;
+            text-align: left;
+        }
+        
         .footer-text {
-            font-size: 8pt;
-            color: #777;
+            font-size: 9.5pt;
+            color: #333;
             margin-top: 4mm;
+            font-weight: 600;
+            line-height: 1.5;
         }
         .date-time {
-            font-size: 7pt;
-            color: #aaa;
-            margin-top: 2mm;
+            font-size: 8.5pt;
+            color: #555;
+            margin-top: 3mm;
+            font-weight: 600;
         }
-        /* Print button for screen only */
+        
+        /* شريط أزرار التحكم الافتراضي (يختفي كلياً عند الطباعة الفعالة) */
         .print-bar {
             position: fixed;
             bottom: 0;
@@ -92,7 +140,7 @@
         }
         .print-btn {
             background: #fff;
-            color: #667eea;
+            color: #764ba2;
             border: none;
             padding: 12px 28px;
             border-radius: 12px;
@@ -107,7 +155,7 @@
         }
         .print-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
         }
         .close-btn {
             background: rgba(255,255,255,0.2);
@@ -117,12 +165,11 @@
             background: rgba(255,255,255,0.3);
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-<base target="_blank">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;900&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="receipt">
-        <div class="shop-name">{{ config.shop_name }}</div>
+        <div class="shop-name">{{ config.shop_name|default:"Salon Pro" }}</div>
         {% if config.shop_phone or config.shop_address %}
         <div class="shop-info">
             {% if config.shop_phone %}{{ config.shop_phone }}{% endif %}
@@ -130,39 +177,45 @@
         </div>
         {% endif %}
 
-        <hr class="divider divider-thick">
+        <hr class="divider-thick">
 
         <div class="label">رقم الدور</div>
-        <div class="queue-number">{{ queue_number }}</div>
+        <div class="queue-number">{{ queue_number|default:"1" }}</div>
 
-        <hr class="divider divider-thick">
+        <hr class="divider-thick">
 
-        {% if customer_name %}
-        <div class="info-row">
-            <span class="info-label">العميل:</span>
-            <span class="info-value">{{ customer_name }}</span>
+        <div class="info-table">
+            {% if booking.customer_name or customer_name %}
+            <div class="info-row">
+                <span class="info-label">العميل:</span>
+                <span class="info-value">{{ booking.customer_name|default:customer_name }}</span>
+            </div>
+            {% endif %}
+            
+            {% if booking.barber or barber_name %}
+            <div class="info-row">
+                <span class="info-label">الحلاق:</span>
+                <span class="info-value">{% if booking.barber %}{{ booking.barber.get_full_name }}{% else %}{{ barber_name }}{% endif %}</span>
+            </div>
+            {% endif %}
+            
+            {% if estimated_total %}
+            <div class="info-row">
+                <span class="info-label">التكلفة المتوقعة:</span>
+                <span class="info-value">{{ estimated_total }} ج.م</span>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
-        {% if barber_name %}
-        <div class="info-row">
-            <span class="info-label">الحلاق:</span>
-            <span class="info-value">{{ barber_name }}</span>
-        </div>
-        {% endif %}
-        {% if estimated_total %}
-        <div class="info-row">
-            <span class="info-label">التكلفة المتوقعة:</span>
-            <span class="info-value">{{ estimated_total }} ج</span>
-        </div>
-        {% endif %}
 
         <hr class="divider">
 
-        <div class="date-time">{{ now|date:"Y-m-d H:i" }}</div>
+        <div class="date-time">
+            {{ booking.created_at|date:"Y-m-d H:i"|default:now|date:"Y-m-d H:i" }}
+        </div>
 
         <div class="footer-text">
-            {{ config.footer_text }}<br>
-            يرجى الانتظار حتى يتم استدعائكم
+            {{ config.footer_text|default:"شكراً لزيارتكم!" }}<br>
+            يرجى الانتظار حتى يتم استدعائكم.
         </div>
     </div>
 
@@ -171,16 +224,17 @@
             <span>🖨️</span> طباعة الفاتورة
         </button>
         <button class="print-btn close-btn" onclick="window.close()">
-            <span>✕</span> إغلاق
+            <span>✕</span> إغلاق النافذة
         </button>
     </div>
 
     <script>
+        // إطلاق أمر الفوكس لسهولة الضغط على مفتاح Enter مباشرة للطباعة
         window.onload = function() {
             setTimeout(function() {
-                // Auto-focus for quick printing
-                document.querySelector('.print-btn').focus();
-            }, 300);
+                const printBtn = document.querySelector('.print-btn');
+                if(printBtn) printBtn.focus();
+            }, 250);
         };
     </script>
 </body>
