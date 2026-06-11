@@ -59,12 +59,12 @@ WSGI_APPLICATION = 'salon_project_pkg.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Nayel',
-        'USER': 'postgres',
-        'PASSWORD': 'Mar15',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'salon_db',                  # اسم قاعدة البيانات اللي لسه مكرينها حالا
+        'USER': 'root',
+        'PASSWORD': 'N@yel', # الباسورد المكونة من 5 حروف/أرقام اللي جربناها ونفعت
+        'HOST': '127.0.0.1',
+        'PORT': '3306',
     }
 }
 
