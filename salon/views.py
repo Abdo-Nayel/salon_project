@@ -199,6 +199,20 @@ def send_whatsapp_invoice(request):
 # POS
 # =============================================================================
 
+import json
+from decimal import Decimal
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.http import JsonResponse
+from django.shortcuts import render, redirect
+from .models import Service, User, Bank, Invoice, InvoiceItem, Branch, Customer
+
+# افترضنا وجود هذه الدوال المساعدة في مشروعك
+def get_user_branch(request):
+    # كود جلب فرع المستخدم الحالي
+    return getattr(request.user, 'branch', None)
+
 @login_required
 def pos(request):
     if not request.user.can_pos:
@@ -210,6 +224,7 @@ def pos(request):
         messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
         return redirect('dashboard')
 
+    # جلب البيانات الأساسية بناءً على الفرع
     if branch:
         services = Service.objects.filter(is_active=True)
         barbers = User.objects.filter(is_barber=True, branch=branch, is_active=True)
@@ -222,62 +237,98 @@ def pos(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         items = data.get('items', [])
+        invoice_id = data.get('invoice_id')  # جلب معرف الفاتورة إن وجد (حالة التعديل)
 
         if not items:
-            return JsonResponse({'success': False, 'error': 'Cart is empty'})
+            return JsonResponse({'success': False, 'error': 'السلة فارغة!'})
 
-        invoice = Invoice()
-        invoice.branch = branch or Branch.objects.first()
-        invoice.created_by = request.user
+        try:
+            # استخدام atomic لمنع مشاكل الـ Race Condition وتداخل طلبات الـ Multi-user
+            with transaction.atomic():
+                if invoice_id:
+                    # حالة التعديل: جلب الفاتورة وعمل قفل عليها في الداتابيز لحين انتهاء المعاملة
+                    invoice = Invoice.objects.select_for_update().get(id=invoice_id)
+                    
+                    # خصم القيمة القديمة من حساب العميل قبل التعديل لإعادة الاحتساب بدقة
+                    if invoice.customer:
+                        invoice.customer.total_spent -= invoice.final_total
+                        invoice.customer.save()
+                    
+                    # حذف العناصر القديمة لإعادة بنائها حسب التعديل الجديد
+                    invoice.items.all().delete()
+                else:
+                    # حالة فاتورة جديدة تماماً
+                    invoice = Invoice()
+                    invoice.branch = branch or Branch.objects.first()
+                    invoice.created_by = request.user
 
-        customer_name = data.get('customer_name', '')
-        customer_phone = data.get('customer_phone', '')
-        if customer_name:
-            customer, _ = Customer.objects.get_or_create(
-                branch=invoice.branch, phone=customer_phone,
-                defaults={'name': customer_name}
-            )
-            invoice.customer = customer
+                # إدخال وتحديث بيانات العميل
+                customer_name = data.get('customer_name', '').strip()
+                customer_phone = data.get('customer_phone', '').strip()
+                if customer_name:
+                    customer, _ = Customer.objects.get_or_create(
+                        branch=invoice.branch, 
+                        phone=customer_phone,
+                        defaults={'name': customer_name}
+                    )
+                    invoice.customer = customer
+                else:
+                    invoice.customer = None
 
-        barber_id = data.get('barber')
-        if barber_id:
-            invoice.barber = User.objects.get(id=barber_id)
+                # إدخال وتحديث الحلاق
+                barber_id = data.get('barber')
+                if barber_id:
+                    invoice.barber = User.objects.get(id=barber_id)
+                else:
+                    invoice.barber = None
 
-        invoice.payment_method = data.get('payment_method', 'cash')
-        bank_id = data.get('bank')
-        if bank_id:
-            invoice.bank = Bank.objects.get(id=bank_id)
+                # طريقة الدفع والبنك
+                invoice.payment_method = data.get('payment_method', 'cash')
+                bank_id = data.get('bank')
+                if invoice.payment_method == 'bank' and bank_id:
+                    invoice.bank = Bank.objects.get(id=bank_id)
+                else:
+                    invoice.bank = None
 
-        invoice.discount = Decimal(data.get('discount', 0))
-        invoice.notes = data.get('notes', '')
-        invoice.save()
+                invoice.discount = Decimal(data.get('discount', 0) or 0)
+                invoice.notes = data.get('notes', '')
+                
+                # حفظ مبدئي لتوليد السيريال والـ ID في قاعدة البيانات إن كانت جديدة
+                invoice.save()
 
-        subtotal = 0
-        for item in items:
-            service = Service.objects.get(id=item['id'])
-            InvoiceItem.objects.create(
-                invoice=invoice,
-                service=service,
-                quantity=item['qty'],
-                price=Decimal(item['price']),
-                total=Decimal(item['qty']) * Decimal(item['price'])
-            )
-            subtotal += Decimal(item['qty']) * Decimal(item['price'])
+                # إعادة بناء عناصر الفاتورة واحتساب المجموع
+                subtotal = 0
+                for item in items:
+                    service = Service.objects.get(id=item['id'])
+                    item_total = Decimal(item['qty']) * Decimal(item['price'])
+                    InvoiceItem.objects.create(
+                        invoice=invoice,
+                        service=service,
+                        quantity=item['qty'],
+                        price=Decimal(item['price']),
+                        total=item_total
+                    )
+                    subtotal += item_total
 
-        invoice.subtotal = subtotal
-        invoice.save()
+                invoice.subtotal = subtotal
+                invoice.save()  # الحفظ النهائي (يقوم موديل Invoice باحتساب final_total تلقائياً في دالة save)
 
-        if invoice.customer:
-            invoice.customer.visits_count += 1
-            invoice.customer.total_spent += invoice.final_total
-            invoice.customer.save()
+                # تحديث إحصائياتspent العميل الإجمالية بعد الحفظ
+                if invoice.customer:
+                    if not invoice_id:  # زيادة عدد الزيارات فقط لو كانت فاتورة جديدة وليست تعديلاً
+                        invoice.customer.visits_count += 1
+                    invoice.customer.total_spent += invoice.final_total
+                    invoice.customer.save()
 
-        return JsonResponse({
-            'success': True,
-            'message': '✅ تم إتمام البيع بنجاح!',
-            'invoice_id': invoice.id,
-            'invoice_number': invoice.invoice_number
-        })
+            return JsonResponse({
+                'success': True,
+                'message': '✅ تم الحفظ بنجاح!',
+                'invoice_id': invoice.id,
+                'invoice_number': invoice.invoice_number
+            })
+
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
 
     context = {
         'services': services,
@@ -287,6 +338,40 @@ def pos(request):
     return render(request, 'salon/pos.html', context)
 
 
+@login_required
+def get_invoice_json(request, invoice_id):
+    """
+    دالة مخصصة لجلب بيانات فاتورة قديمة بصيغة JSON 
+    وعرض محتوياتها داخل شاشة الـ POS لإعادة التعديل عليها
+    """
+    try:
+        invoice = Invoice.objects.get(id=invoice_id)
+        items_data = []
+        
+        for item in invoice.items.all():
+            items_data.append({
+                'id': item.service.id if item.service else None,
+                'name': item.service.name if item.service else (item.product.name if item.product else "خدمة غير معروفة"),
+                'price': str(item.price),
+                'qty': item.quantity,
+            })
+            
+        return JsonResponse({
+            'success': True,
+            'invoice': {
+                'id': invoice.id,
+                'invoice_number': invoice.invoice_number,
+                'customer_name': invoice.customer.name if invoice.customer else '',
+                'customer_phone': invoice.customer.phone if invoice.customer else '',
+                'barber_id': invoice.barber.id if invoice.barber else '',
+                'payment_method': invoice.payment_method,
+                'bank_id': invoice.bank.id if invoice.bank else '',
+                'discount': str(invoice.discount),
+                'items': items_data
+            }
+        })
+    except Invoice.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'الفاتورة المطلوبة غير موجودة.'})
 # =============================================================================
 # INVOICE PRINT
 # =============================================================================
