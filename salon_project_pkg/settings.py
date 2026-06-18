@@ -1,16 +1,39 @@
 """
-Django settings for Salon Accounting System
+Django settings for Salon Pro — development & production.
+Set environment variables on the server (see comments below).
 """
 import os
 from pathlib import Path
 
+from django.contrib.messages import constants as messages_constants
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'your-secret-key-here-change-in-production'
 
-DEBUG = True
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
 
-ALLOWED_HOSTS = ['*']
+
+def _env_list(name: str, default: str = '') -> list[str]:
+    raw = os.environ.get(name, default)
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
+# SECURITY
+# DJANGO_SECRET_KEY=long-random-string
+# DJANGO_DEBUG=False
+# DJANGO_ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+# DJANGO_CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-dev-only-change-before-production',
+)
+DEBUG = _env_bool('DJANGO_DEBUG', True)
+ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')
+CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -25,6 +48,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -55,29 +79,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'salon_project_pkg.wsgi.application'
 
-
-
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': 'salon_db',                
-#         'USER': 'root',
-#         'PASSWORD': 'N@yel', 
-#         'HOST': '127.0.0.1',
-#         'PORT': '3306',
-#     }
-# }
+# DATABASE
+# DB_NAME=salon_db
+# DB_USER=postgres
+# DB_PASSWORD=...
+# DB_HOST=localhost
+# DB_PORT=5432
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Nayel',
-        'USER': 'postgres',
-        'PASSWORD': 'Mar15',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get('DB_NAME', 'Nayel'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'Mar15'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
-
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -86,15 +103,15 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ar'
 TIME_ZONE = 'Africa/Cairo'
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
 STATIC_URL = '/static/'
-STATICFILES_DIRS = []  # <-- ثبتنا ده (مش لازم تحط حاجة هنا في التطوير)
-STATIC_ROOT = BASE_DIR / 'staticfiles'  # <-- للـ production
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -107,8 +124,6 @@ LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
 
-# Messages
-from django.contrib.messages import constants as messages_constants
 MESSAGE_TAGS = {
     messages_constants.DEBUG: 'secondary',
     messages_constants.INFO: 'info',
@@ -117,7 +132,18 @@ MESSAGE_TAGS = {
     messages_constants.ERROR: 'danger',
 }
 
+# Optional WhatsApp integration
+# WHATSAPP_API_URL=https://...
+# WHATSAPP_API_KEY=...
+# WHATSAPP_INSTANCE=...
+WHATSAPP_API_URL = os.environ.get('WHATSAPP_API_URL', '')
+WHATSAPP_API_KEY = os.environ.get('WHATSAPP_API_KEY', '')
+WHATSAPP_INSTANCE = os.environ.get('WHATSAPP_INSTANCE', '')
 
-# WHATSAPP_API_URL = "https://whatsapp.erpshbysoftwarehouse.com"
-# WHATSAPP_API_KEY = "EepZoR2v3ZxZcoxML31yny7pOMJ8zsOhETIhNEUPYxktH0aE5KLqvD87HujZeWgU"
-# WHATSAPP_INSTANCE = "01029029992"
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
