@@ -18,20 +18,15 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.SeparateDatabaseAndState(
-            state_operations=[
-                migrations.AddField(
-                    model_name='booking',
-                    name='serial_number',
-                    field=models.PositiveIntegerField(default=0, verbose_name='المسلسل'),
-                ),
-                migrations.AddField(
-                    model_name='booking',
-                    name='daily_number',
-                    field=models.PositiveIntegerField(default=0, verbose_name='رقم يومي'),
-                ),
-            ],
-            database_operations=[],
+        migrations.AddField(
+            model_name='booking',
+            name='serial_number',
+            field=models.PositiveIntegerField(default=0, verbose_name='المسلسل'),
+        ),
+        migrations.AddField(
+            model_name='booking',
+            name='daily_number',
+            field=models.PositiveIntegerField(default=0, verbose_name='رقم يومي'),
         ),
         migrations.RunPython(backfill_booking_serials, migrations.RunPython.noop),
     ]
