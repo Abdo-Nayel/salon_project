@@ -1,10 +1,11 @@
-{% load static %}
+﻿{% load static %}
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💈 تسجيل الدخول - Salon Pro</title>
+    <title>تسجيل الدخول - {{ project_name }}</title>
+    <link rel="icon" type="image/png" href="{% static brand_logo %}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -13,42 +14,42 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            padding: 24px 16px;
+        }
+        .login-wrap {
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
         }
         .login-card {
             background: white;
             border-radius: 30px;
-            padding: 50px 40px;
+            padding: 44px 36px 32px;
             box-shadow: 0 25px 80px rgba(0,0,0,0.3);
             width: 100%;
-            max-width: 420px;
-            text-align: center;
             animation: slideUp 0.8s ease-out;
         }
         @keyframes slideUp {
             from { opacity: 0; transform: translateY(50px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .login-logo {
-            font-size: 4rem;
-            margin-bottom: 20px;
-            animation: float 3s ease-in-out infinite;
-        }
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-15px); }
-        }
         .login-title {
             font-weight: 800;
-            font-size: 1.8rem;
-            color: #2d3436;
-            margin-bottom: 10px;
+            font-size: 1.55rem;
+            margin-bottom: 28px;
+            line-height: 1.4;
         }
-        .login-subtitle {
-            color: #888;
-            margin-bottom: 35px;
-            font-weight: 500;
+        .login-title .welcome-text {
+            color: #667eea;
+        }
+        .login-title .brand-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
         .form-control {
             border-radius: 15px;
@@ -77,60 +78,47 @@
             transform: translateY(-3px);
             box-shadow: 0 10px 30px rgba(108, 92, 231, 0.4);
         }
-        .login-vendor {
-            margin-top: 28px;
+        .login-page-footer {
+            margin-top: 20px;
             font-size: 0.8rem;
-            color: #aaa;
+            color: rgba(255,255,255,0.85);
         }
-        .login-vendor strong { color: #6c5ce7; }
+        .login-page-footer strong { font-weight: 700; }
+        .alert { border-radius: 15px; border: none; }
     </style>
-<base target="_blank">
 </head>
 <body>
-    <div class="login-card">
-        <div class="login-logo">💈</div>
-        <h1 class="login-title">Salon Pro</h1>
-        <p class="login-subtitle">نظام إدارة الصالونات المحاسبي</p>
+    <div class="login-wrap">
+        <div class="login-card">
+            <h1 class="login-title">
+                <span class="welcome-text">Welcome to</span>
+                <span class="brand-text"> LyomasTech</span>
+            </h1>
 
-        {% if messages %}
-            {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            {% endfor %}
-        {% endif %}
+            {% if messages %}
+                {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
 
-        <form method="post">
-            {% csrf_token %}
-            <div class="mb-3">
-                {{ form.username }}
-            </div>
-            <div class="mb-3">
-                {{ form.password }}
-            </div>
-            <button type="submit" class="btn-login">
-                <i class="fas fa-sign-in-alt me-2"></i> تسجيل الدخول
-            </button>
-        </form>
-        <p class="login-vendor mb-0">تطوير <strong>LyomasTech</strong></p>
+            <form method="post">
+                {% csrf_token %}
+                <div class="mb-3">
+                    {{ form.username }}
+                </div>
+                <div class="mb-3">
+                    {{ form.password }}
+                </div>
+                <button type="submit" class="btn-login">تسجيل الدخول</button>
+            </form>
+        </div>
     </div>
+
+    <footer class="login-page-footer">Powered By <strong>{{ project_vendor }}</strong></footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-    // FORCE ALL LINKS TO OPEN IN SAME TAB
-    (function() {
-        var bases = document.querySelectorAll('base[target="_blank"]');
-        bases.forEach(function(base) { base.remove(); });
-        document.querySelectorAll('a:not([target])').forEach(function(link) {
-            link.setAttribute('target', '_self');
-        });
-        document.querySelectorAll('a[target="_blank"]').forEach(function(link) {
-            var href = link.getAttribute('href') || '';
-            if (!href.match(/^https?:\/\//)) {
-                link.setAttribute('target', '_self');
-            }
-        });
-    })();
-    </script>
 </body>
 </html>

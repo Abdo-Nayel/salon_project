@@ -8,6 +8,8 @@ def branch_context(request):
     """Add branch context to all templates"""
     context = {
         'project_vendor': getattr(settings, 'PROJECT_VENDOR', 'LyomasTech'),
+        'project_name': getattr(settings, 'PROJECT_NAME', 'LyomasTech'),
+        'brand_logo': getattr(settings, 'BRAND_LOGO', 'salon/LyomasTech_Logo2.png'),
     }
 
     if request.user.is_authenticated:

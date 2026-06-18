@@ -1,5 +1,5 @@
-{% extends "salon/simple_base.html" %}
-{% block title %}⚙️ الإعدادات - صالون برو{% endblock %}
+﻿{% extends "salon/simple_base.html" %}
+{% block title %}⚙️ الإعدادات - LyomasTech{% endblock %}
 {% block page_title %}الإعدادات{% endblock %}
 
 {% block content %}
@@ -26,7 +26,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">اسم الصالون</label>
-                        <input type="text" class="form-control" name="salon_name" value="{{ settings.salon_name|default:"صالون برو" }}">
+                        <input type="text" class="form-control" name="salon_name" value="{{ settings.salon_name|default:'' }}">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">رقم الهاتف</label>

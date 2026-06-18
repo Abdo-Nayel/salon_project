@@ -209,7 +209,7 @@ def send_whatsapp_invoice(request):
             if phone.startswith('0'):
                 phone = '2' + phone
                 
-            message = f"💈 *Salon Pro*\n\nعزيزي العميل، تم إصدار فاتورتك بنجاح.\n📄 فاتورة رقم: #{invoice_number}\n🔗 لمشاهدة الفاتورة: {request.build_absolute_uri(f'/invoice/{invoice_id}/receipt/')}\n\nشكراً لزيارتك! 🙏"
+            message = f"*{settings.PROJECT_NAME}*\n\nعزيزي العميل، تم إصدار فاتورتك بنجاح.\n📄 فاتورة رقم: #{invoice_number}\n🔗 لمشاهدة الفاتورة: {request.build_absolute_uri(f'/invoice/{invoice_id}/receipt/')}\n\nشكراً لزيارتك! 🙏"
 
             # 🎯 الـتـعـديـل الـقـاطـع: أسماء الـ Keys كما هي في قاعدة بيانات السيرفر بالظبط
             payload = {
