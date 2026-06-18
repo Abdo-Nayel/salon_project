@@ -60,12 +60,14 @@
                 </div>
 
                 <div class="mb-3">
-                    <select id="barber" class="form-select">
-                        <option value="">اختر الحلاق</option>
-                        {% for b in barbers %}
-                        <option value="{{ b.id }}">{{ b.get_full_name|default:b.username }}</option>
+                    <label class="form-label fw-bold small">الموظف <span class="text-danger">*</span></label>
+                    <select id="employeeSelect" class="form-select mb-2" onchange="onEmployeeSelect()">
+                        <option value="">— اختر الموظف —</option>
+                        {% for e in employees %}
+                        <option value="{{ e.serial_number }}" data-id="{{ e.id }}" data-name="{{ e.name }}">{{ e.serial_number }} — {{ e.name }}</option>
                         {% endfor %}
                     </select>
+                    <input type="text" id="employeeCode" class="form-control" placeholder="أو اكتب كود الموظف — Enter" inputmode="numeric" autocomplete="off">
                 </div>
 
                 <div class="mb-3">
@@ -122,6 +124,91 @@ let currentInvoiceId = null;
 let currentSerial = null;
 let currentBookingId = null;
 let canEditLoaded = true;
+let currentEmployeeId = null;
+
+function syncEmployeeDropdown(code) {
+    const sel = document.getElementById('employeeSelect');
+    if (!sel) return;
+    const match = [...sel.options].find(o => o.value === String(code || ''));
+    sel.value = match ? match.value : '';
+}
+
+function applyEmployeeSelection({code = '', id = null} = {}) {
+    document.getElementById('employeeCode').value = code;
+    syncEmployeeDropdown(code);
+    currentEmployeeId = id;
+}
+
+function onEmployeeSelect() {
+    const sel = document.getElementById('employeeSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (!sel.value) {
+        applyEmployeeSelection();
+        return;
+    }
+    applyEmployeeSelection({
+        code: sel.value,
+        id: opt.dataset.id || null,
+    });
+}
+
+function syncEmployeeFromCode(useApi = false) {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (!code) {
+        applyEmployeeSelection();
+        return;
+    }
+    const sel = document.getElementById('employeeSelect');
+    const localOpt = [...sel.options].find(o => o.value === code);
+    if (localOpt) {
+        applyEmployeeSelection({
+            code,
+            id: localOpt.dataset.id || null,
+        });
+        return;
+    }
+    if (!useApi) {
+        syncEmployeeDropdown('');
+        currentEmployeeId = null;
+        return;
+    }
+    fetch(`/employees/lookup/?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'موظف غير موجود');
+                applyEmployeeSelection();
+                return;
+            }
+            applyEmployeeSelection({
+                code: data.employee.code,
+                id: data.employee.id,
+            });
+        })
+        .catch(() => alert('خطأ في الاتصال'));
+}
+
+function loadEmployeeFromCode() {
+    syncEmployeeFromCode(true);
+}
+
+function setEmployeeCode(code, name) {
+    if (!code) {
+        applyEmployeeSelection();
+        return;
+    }
+    const sel = document.getElementById('employeeSelect');
+    const localOpt = [...sel.options].find(o => o.value === String(code));
+    if (localOpt) {
+        applyEmployeeSelection({
+            code: String(code),
+            id: localOpt.dataset.id || null,
+        });
+    } else {
+        document.getElementById('employeeCode').value = String(code);
+        syncEmployeeFromCode(true);
+    }
+}
 
 function loadVIPBookingFromInput() {
     const queue = document.getElementById('vipBookingInput').value.trim();
@@ -155,7 +242,7 @@ function applyBookingData(booking) {
 
     document.getElementById('customerName').value = booking.customer_name || '';
     document.getElementById('customerPhone').value = booking.customer_phone || '';
-    document.getElementById('barber').value = booking.barber_id || '';
+    setEmployeeCode(booking.employee_code || '', booking.employee_name || '');
     document.getElementById('vipBookingInput').value = booking.queue_number;
 
     const info = document.getElementById('vipBookingInfo');
@@ -232,7 +319,7 @@ function applyInvoiceData(inv) {
 
     document.getElementById('customerName').value = inv.customer_name || '';
     document.getElementById('customerPhone').value = inv.customer_phone || '';
-    document.getElementById('barber').value = inv.barber_id || '';
+    setEmployeeCode(inv.employee_code || '', inv.employee_name || '');
     document.getElementById('discountAmount').value = inv.discount || '';
     setPayment(inv.payment_method || 'cash');
     if (inv.payment_method === 'bank' && inv.bank_id) {
@@ -345,10 +432,27 @@ function setPayment(method, btn) {
     if (btn) btn.classList.add('active');
 }
 
+function getEmployeeCode() {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (code) return code;
+    return document.getElementById('employeeSelect').value.trim();
+}
+
 function submitInvoice() {
     if (cart.length === 0) {
         alert('السلة فارغة!');
         return;
+    }
+
+    const employeeCode = getEmployeeCode();
+    if (!employeeCode || !currentEmployeeId) {
+        alert('الموظف مطلوب — اختره من القائمة أو اكتب كوده الصحيح');
+        if (!employeeCode) document.getElementById('employeeSelect').focus();
+        else document.getElementById('employeeCode').focus();
+        return;
+    }
+    if (!document.getElementById('employeeCode').value.trim()) {
+        document.getElementById('employeeCode').value = employeeCode;
     }
 
     if (paymentMethod === 'bank') {
@@ -367,7 +471,7 @@ function submitInvoice() {
         items: cart,
         customer_name: customerNameElement.value,
         customer_phone: customerPhoneElement.value,
-        barber: document.getElementById('barber').value,
+        employee_code: getEmployeeCode(),
         payment_method: paymentMethod,
         bank: document.getElementById('bankSelect').value,
         discount: discountAmountElement.value,
@@ -512,7 +616,7 @@ function resetAfterSave() {
     document.getElementById('serialInput').value = '';
     document.getElementById('vipBookingInput').value = '';
     document.getElementById('vipBookingInfo').classList.add('d-none');
-    document.getElementById('barber').value = '';
+    setEmployeeCode('', '');
     document.getElementById('invoiceBadge').classList.add('d-none');
     updateRecallUI();
 }
@@ -537,6 +641,24 @@ document.getElementById('vipBookingInput').addEventListener('keydown', function(
     if (e.key === 'Enter') {
         e.preventDefault();
         loadVIPBookingFromInput();
+    }
+});
+
+document.getElementById('employeeCode').addEventListener('input', function() {
+    syncEmployeeFromCode(false);
+});
+
+document.getElementById('employeeCode').addEventListener('blur', function() {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (code && !currentEmployeeId) {
+        syncEmployeeFromCode(true);
+    }
+});
+
+document.getElementById('employeeCode').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        loadEmployeeFromCode();
     }
 });
 </script>

@@ -1,0 +1,130 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}تكويد موظف{% endblock %}
+{% block page_title %}تكويد موظف{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header text-white d-flex justify-content-between" style="background:linear-gradient(135deg,#00b894,#55efc4);">
+                <h5 class="mb-0"><i class="fas fa-id-badge me-2"></i> تكويد موظف</h5>
+                <small>التالي: {{ next_code }}</small>
+            </div>
+            <div class="card-body p-4">
+                <label class="form-label fw-bold small">كود الموظف</label>
+                <input type="text" id="employeeCode" class="form-control mb-2" placeholder="الكود — Enter للتحميل" value="{{ next_code }}" inputmode="numeric">
+
+                <label class="form-label fw-bold small">اسم الموظف *</label>
+                <input type="text" id="employeeName" class="form-control mb-3" placeholder="اسم الموظف">
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="employeeActive" checked>
+                    <label class="form-check-label fw-bold" for="employeeActive">موظف نشط</label>
+                </div>
+
+                <div id="employeeInfo" class="alert alert-info py-2 small d-none mb-2"></div>
+
+                <div id="employeeActions" class="d-none d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-danger flex-fill" id="btnDeleteEmployee" onclick="deleteEmployee()">حذف</button>
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="newEmployee()">جديد</button>
+                </div>
+
+                <button type="button" class="btn w-100 btn-lg text-white" style="background:linear-gradient(135deg,#00b894,#55efc4);" onclick="saveEmployee()">
+                    <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ الموظف</span>
+                </button>
+                <a href="/employees/" class="btn btn-outline-secondary w-100 mt-2">رجوع</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentEmployeeId = null;
+let canDeleteEmployee = false;
+
+document.getElementById('employeeCode').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); loadEmployee(); }
+});
+
+function loadEmployee() {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (!code) return;
+    fetch(`/employees/lookup/?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'موظف غير موجود');
+                currentEmployeeId = null;
+                document.getElementById('employeeInfo').classList.add('d-none');
+                document.getElementById('employeeActions').classList.add('d-none');
+                document.getElementById('saveLabel').textContent = 'حفظ الموظف';
+                return;
+            }
+            const e = data.employee;
+            currentEmployeeId = e.id;
+            canDeleteEmployee = e.can_delete;
+            document.getElementById('employeeName').value = e.name;
+            document.getElementById('employeeActive').checked = e.is_active;
+            const info = document.getElementById('employeeInfo');
+            info.textContent = e.can_delete
+                ? 'موظف محمّل — يمكن التعديل أو الحذف'
+                : `موظف محمّل — تعديل فقط (${e.delete_message})`;
+            info.classList.remove('d-none');
+            document.getElementById('employeeActions').classList.remove('d-none');
+            document.getElementById('btnDeleteEmployee').style.display = e.can_delete ? 'block' : 'none';
+            document.getElementById('saveLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newEmployee() {
+    currentEmployeeId = null;
+    canDeleteEmployee = false;
+    document.getElementById('employeeCode').value = '{{ next_code }}';
+    document.getElementById('employeeName').value = '';
+    document.getElementById('employeeActive').checked = true;
+    document.getElementById('employeeInfo').classList.add('d-none');
+    document.getElementById('employeeActions').classList.add('d-none');
+    document.getElementById('saveLabel').textContent = 'حفظ الموظف';
+}
+
+function saveEmployee() {
+    const payload = {
+        action: 'save',
+        code: document.getElementById('employeeCode').value.trim(),
+        name: document.getElementById('employeeName').value.trim(),
+        is_active: document.getElementById('employeeActive').checked,
+    };
+    if (currentEmployeeId) payload.employee_id = currentEmployeeId;
+    if (!payload.name) { alert('اسم الموظف مطلوب'); return; }
+
+    fetch('/employees/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            if (data.next_code) document.querySelector('.card-header small').textContent = 'التالي: ' + data.next_code;
+            newEmployee();
+            if (data.next_code) document.getElementById('employeeCode').value = data.next_code;
+        } else alert(data.error);
+    });
+}
+
+function deleteEmployee() {
+    if (!currentEmployeeId || !canDeleteEmployee) return;
+    if (!confirm('حذف هذا الموظف؟')) return;
+    fetch('/employees/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ action: 'delete', employee_id: currentEmployeeId }),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            document.getElementById('employeeCode').value = data.next_code || '1';
+            newEmployee();
+        } else alert(data.error);
+    });
+}
+</script>
+{% endblock %}

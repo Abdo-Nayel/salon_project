@@ -40,12 +40,9 @@
                 <input type="text" id="customerName" class="form-control mb-2" placeholder="اسم العميل *" required>
                 <input type="text" id="customerPhone" class="form-control mb-2" placeholder="رقم الهاتف *" required>
 
-                <select id="barber" class="form-select mb-2">
-                    <option value="">اختر الحلاق (اختياري)</option>
-                    {% for b in barbers %}
-                    <option value="{{ b.id }}">{{ b.get_full_name|default:b.username }}</option>
-                    {% endfor %}
-                </select>
+                <label class="form-label fw-bold small">كود الموظف (اختياري)</label>
+                <input type="text" id="employeeCode" class="form-control mb-2" placeholder="كود الموظف — Enter" inputmode="numeric">
+                <div id="employeeNameDisplay" class="small text-muted mb-2"></div>
 
                 <textarea id="notes" class="form-control mb-3" rows="2" placeholder="ملاحظات (اختياري)"></textarea>
 
@@ -65,6 +62,32 @@
 
 <script>
 let cart = [];
+let currentEmployeeId = null;
+
+function loadEmployeeFromCode() {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (!code) {
+        currentEmployeeId = null;
+        document.getElementById('employeeNameDisplay').textContent = '';
+        return;
+    }
+    fetch(`/employees/lookup/?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'موظف غير موجود');
+                currentEmployeeId = null;
+                document.getElementById('employeeNameDisplay').textContent = '';
+                return;
+            }
+            currentEmployeeId = data.employee.id;
+            document.getElementById('employeeNameDisplay').textContent = data.employee.name;
+        });
+}
+
+document.getElementById('employeeCode').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); loadEmployeeFromCode(); }
+});
 
 function addToCart(id, name, price) {
     const existing = cart.find(i => i.id === id);
@@ -126,7 +149,7 @@ function submitBooking() {
             items: cart,
             customer_name: name,
             customer_phone: phone,
-            barber: document.getElementById('barber').value,
+            employee_code: document.getElementById('employeeCode').value.trim(),
             notes: document.getElementById('notes').value,
         }),
     })
@@ -140,7 +163,9 @@ function submitBooking() {
             document.getElementById('customerName').value = '';
             document.getElementById('customerPhone').value = '';
             document.getElementById('notes').value = '';
-            document.getElementById('barber').value = '';
+            document.getElementById('employeeCode').value = '';
+            document.getElementById('employeeNameDisplay').textContent = '';
+            currentEmployeeId = null;
         } else {
             alert(data.error || 'فشل الحفظ');
         }

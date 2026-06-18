@@ -23,10 +23,32 @@
             line-height: 1.4;
         }
         .receipt { text-align: center; }
+        .receipt-brand { margin-bottom: 2mm; }
+        .shop-logo {
+            display: block;
+            max-width: 50mm;
+            max-height: 18mm;
+            object-fit: contain;
+            margin: 0 auto 2mm;
+        }
         .shop-name {
             font-size: 13pt;
             font-weight: 800;
             margin-bottom: 1mm;
+        }
+        .shop-phone {
+            font-size: 8pt;
+            color: #444;
+            margin-bottom: 2mm;
+            font-weight: 600;
+        }
+        .shop-address {
+            font-size: 7.5pt;
+            color: #555;
+            margin-top: 3mm;
+            padding-top: 2mm;
+            border-top: 1px dashed #bbb;
+            line-height: 1.5;
         }
         .shop-info {
             font-size: 7pt;
@@ -145,13 +167,7 @@
 </head>
 <body>
     <div class="receipt">
-        <div class="shop-name">{{ config.shop_name }}</div>
-        {% if config.shop_phone or config.shop_address %}
-        <div class="shop-info">
-            {% if config.shop_phone %}📞 {{ config.shop_phone }}{% endif %}
-            {% if config.shop_address %}<br>📍 {{ config.shop_address }}{% endif %}
-        </div>
-        {% endif %}
+        {% include "salon/partials/receipt_brand_header.html" %}
 
         <hr class="divider-thick">
 
@@ -169,9 +185,14 @@
             <span class="value">{{ invoice.customer.name }}</span>
         </div>
         {% endif %}
-        {% if invoice.barber %}
+        {% if invoice.employee %}
         <div class="info-row">
-            <span class="label">الحلاق:</span>
+            <span class="label">الموظف:</span>
+            <span class="value">{{ invoice.employee.name }}</span>
+        </div>
+        {% elif invoice.barber %}
+        <div class="info-row">
+            <span class="label">الموظف:</span>
             <span class="value">{{ invoice.barber.get_full_name|default:invoice.barber.username }}</span>
         </div>
         {% endif %}
@@ -224,9 +245,9 @@
 
         <div class="footer-text">
             {{ config.footer_text }}<br>
-            Salon Pro - نظام إدارة الصالونات<br>
             شكراً لثقتكم
         </div>
+        {% include "salon/partials/receipt_brand_footer.html" %}
     </div>
 
     <div class="print-bar no-print">

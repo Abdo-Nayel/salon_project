@@ -280,26 +280,23 @@
             </table>
         </div>
 
-        <!-- أداء الحلاقين -->
+        <!-- أداء الموظفين -->
         <div>
-            <div class="section-title">✂️ أداء الحلاقين</div>
+            <div class="section-title">👔 أداء الموظفين</div>
             <table>
                 <thead>
                     <tr>
-                        <th>الحلاق</th>
+                        <th>الموظف</th>
                         <th>المبيعات</th>
                         <th>الفواتير</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for barber in barber_performance %}
+                    {% for row in employee_performance %}
                     <tr>
-                        <td class="text-right">
-                            {{ barber.barber__first_name|default:"" }} 
-                            {{ barber.barber__last_name|default:"" }}
-                        </td>
-                        <td class="text-primary fw-bold">{{ barber.total_sales|default:0 }} ج</td>
-                        <td>{{ barber.invoice_count|default:0 }}</td>
+                        <td class="text-right">{{ row.employee__name|default:"—" }}</td>
+                        <td class="text-primary fw-bold">{{ row.total_sales|default:0 }} ج</td>
+                        <td>{{ row.invoice_count|default:0 }}</td>
                     </tr>
                     {% empty %}
                     <tr>

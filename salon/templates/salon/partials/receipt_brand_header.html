@@ -1,0 +1,11 @@
+{% load static %}
+{# هيدر موحّد للطباعة: شعار → اسم → هاتف #}
+<div class="receipt-brand">
+    {% if config.shop_logo %}
+    <img src="{{ config.shop_logo }}" alt="{{ config.shop_name }}" class="shop-logo">
+    {% endif %}
+    <div class="shop-name">{{ config.shop_name|default:"صالون برو" }}</div>
+    {% if config.shop_phone %}
+    <div class="shop-phone">{{ config.shop_phone }}</div>
+    {% endif %}
+</div>

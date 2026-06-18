@@ -74,10 +74,17 @@ urlpatterns = [
     path('customers/', views.customer_list, name='customer_list'),
     path('customers/add/', views.customer_add, name='customer_add'),
 
+    # Employees
+    path('employees/', views.employee_list, name='employee_list'),
+    path('employees/add/', views.employee_add, name='employee_add'),
+    path('employees/lookup/', views.employee_lookup, name='employee_lookup'),
+
     # Settings
     path('settings/', views.settings_view, name='settings'),
+    path('settings/backup/', views.settings_backup, name='settings_backup'),
     path('users/', views.user_list, name='user_list'),
     path('users/add/', views.user_add, name='user_add'),
+    path('users/lookup/', views.user_lookup, name='user_lookup'),
     path('users/<int:pk>/edit/', views.user_edit, name='user_edit'),
     path('users/<int:pk>/delete/', views.user_delete, name='user_delete'),
 

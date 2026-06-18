@@ -28,7 +28,7 @@
                         <th class="py-3 px-4 text-center" style="width: 80px;">#</th>
                         <th class="py-3">العميل</th>
                         <th class="py-3">الهاتف</th>
-                        <th class="py-3">الحلاق</th>
+                        <th class="py-3">الموظف</th>
                         <th class="py-3">الحالة</th>
                         <th class="py-3">التاريخ</th>
                         <th class="py-3 text-center" style="width: 150px;">إجراءات</th>
@@ -44,8 +44,10 @@
                         <td class="fw-semibold">{{ booking.customer_name }}</td>
                         <td class="text-secondary">{{ booking.customer_phone|default:"-" }}</td>
                         <td>
-                            {% if booking.barber %}
-                                <span class="fw-semibold"><i class="fas fa-scissors text-muted me-1"></i> {{ booking.barber.get_full_name|default:booking.barber.username }}</span>
+                            {% if booking.employee %}
+                                <span class="fw-semibold"><i class="fas fa-user-tie text-muted me-1"></i> {{ booking.employee.name }}</span>
+                            {% elif booking.barber %}
+                                <span class="fw-semibold"><i class="fas fa-user-tie text-muted me-1"></i> {{ booking.barber.get_full_name|default:booking.barber.username }}</span>
                             {% else %}
                                 <span class="badge bg-secondary-subtle text-secondary px-2.5 py-1.5">غير محدد</span>
                             {% endif %}

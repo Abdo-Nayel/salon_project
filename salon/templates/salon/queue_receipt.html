@@ -50,11 +50,33 @@
             text-align: center;
             width: 100%;
         }
+        .receipt-brand { margin-bottom: 2mm; }
+        .shop-logo {
+            display: block;
+            max-width: 50mm;
+            max-height: 20mm;
+            object-fit: contain;
+            margin: 0 auto 2mm;
+        }
         .shop-name {
             font-size: 16pt;
             font-weight: 800;
+            margin-bottom: 1mm;
+        }
+        .shop-phone {
+            font-size: 9pt;
+            color: #333;
             margin-bottom: 2mm;
-            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .shop-address {
+            font-size: 8.5pt;
+            color: #444;
+            margin-top: 4mm;
+            padding-top: 2mm;
+            border-top: 1px dashed #000;
+            line-height: 1.5;
+            font-weight: 600;
         }
         .shop-info {
             font-size: 9pt;
@@ -169,13 +191,7 @@
 </head>
 <body>
     <div class="receipt">
-        <div class="shop-name">{{ config.shop_name|default:"Salon Pro" }}</div>
-        {% if config.shop_phone or config.shop_address %}
-        <div class="shop-info">
-            {% if config.shop_phone %}{{ config.shop_phone }}{% endif %}
-            {% if config.shop_address %}<br>{{ config.shop_address }}{% endif %}
-        </div>
-        {% endif %}
+        {% include "salon/partials/receipt_brand_header.html" %}
 
         <hr class="divider-thick">
 
@@ -192,10 +208,10 @@
             </div>
             {% endif %}
             
-            {% if booking.barber or barber_name %}
+            {% if booking.employee or employee_name %}
             <div class="info-row">
-                <span class="info-label">الحلاق:</span>
-                <span class="info-value">{% if booking.barber %}{{ booking.barber.get_full_name }}{% else %}{{ barber_name }}{% endif %}</span>
+                <span class="info-label">الموظف:</span>
+                <span class="info-value">{% if booking.employee %}{{ booking.employee.name }}{% else %}{{ employee_name }}{% endif %}</span>
             </div>
             {% endif %}
             
@@ -217,6 +233,7 @@
             {{ config.footer_text|default:"شكراً لزيارتكم!" }}<br>
             يرجى الانتظار حتى يتم استدعائكم.
         </div>
+        {% include "salon/partials/receipt_brand_footer.html" %}
     </div>
 
     <div class="print-bar no-print">

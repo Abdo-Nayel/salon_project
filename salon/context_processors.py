@@ -16,6 +16,9 @@ def branch_context(request):
             'can_expenses': request.user.can_expenses,
             'can_reports': request.user.can_reports,
             'can_settings': request.user.can_settings,
+            'can_bookings': request.user.can_bookings,
+            'can_customers': request.user.can_customers,
+            'can_services': request.user.can_services,
         }
 
     return context

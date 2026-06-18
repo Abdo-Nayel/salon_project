@@ -7,6 +7,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Sum, Count, Q, F
+from django.db import transaction
 from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -37,7 +38,9 @@ from .models import (
     PurchaseInvoice, PurchaseInvoiceItem,
     ConsumptionInvoice, ConsumptionInvoiceItem,
     ExpenseType, ExpenseVoucher,
+    SalonSettings, Employee,
 )
+from .backup_utils import create_backup_sql, restore_backup_sql, latest_backup_info
 from .forms import (
     LoginForm, UserForm, ServiceForm, ProductForm,
     BankForm, CustomerForm, BookingForm, ExpenseForm, StockMovementForm
@@ -77,6 +80,32 @@ def get_branch_queryset(request, model, order_by='-created_at'):
             return model.objects.all().order_by(order_by)
             
     return model.objects.all().order_by(order_by)
+
+
+def _resolve_employee(branch, data):
+    """Resolve employee from code or id for the given branch."""
+    if not branch:
+        return None
+    employee_code = str(data.get('employee_code', '')).strip()
+    if employee_code:
+        return Employee.objects.filter(
+            branch=branch, serial_number=employee_code, is_active=True,
+        ).first()
+    employee_id = data.get('employee')
+    if employee_id:
+        return Employee.objects.filter(
+            branch=branch, id=employee_id, is_active=True,
+        ).first()
+    return None
+
+
+def _employee_performance(invoices):
+    return invoices.filter(employee__isnull=False).values(
+        'employee__name',
+    ).annotate(
+        total_sales=Sum('final_total'),
+        invoice_count=Count('id'),
+    ).order_by('-total_sales')
 
 
 # =============================================================================
@@ -219,20 +248,6 @@ def send_whatsapp_invoice(request):
 # POS
 # =============================================================================
 
-import json
-from decimal import Decimal
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.db import transaction
-from django.http import JsonResponse
-from django.shortcuts import render, redirect
-from .models import Service, User, Bank, Invoice, InvoiceItem, Branch, Customer
-
-# افترضنا وجود هذه الدوال المساعدة في مشروعك
-def get_user_branch(request):
-    # كود جلب فرع المستخدم الحالي
-    return getattr(request.user, 'branch', None)
-
 @login_required
 def pos(request):
     if not request.user.can_pos:
@@ -244,15 +259,14 @@ def pos(request):
         messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
         return redirect('dashboard')
 
-    # جلب البيانات الأساسية بناءً على الفرع
     if branch:
         services = Service.objects.filter(is_active=True)
-        barbers = User.objects.filter(is_barber=True, branch=branch, is_active=True)
         banks = Bank.objects.filter(branch=branch, is_active=True)
+        employees = Employee.objects.filter(branch=branch, is_active=True).order_by('serial_number')
     else:
         services = Service.objects.filter(is_active=True)
-        barbers = User.objects.filter(is_barber=True, is_active=True)
         banks = Bank.objects.filter(is_active=True)
+        employees = Employee.objects.filter(is_active=True).order_by('branch', 'serial_number')
 
     if request.method == 'POST':
         data = json.loads(request.body)
@@ -263,8 +277,25 @@ def pos(request):
         if not items:
             return JsonResponse({'success': False, 'error': 'السلة فارغة!'})
 
+        invoice_branch = branch or Branch.objects.first()
+        if invoice_id:
+            try:
+                invoice_branch = Invoice.objects.get(
+                    id=invoice_id, is_voided=False,
+                ).branch
+            except Invoice.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'الفاتورة غير موجودة'})
+
+        if not invoice_branch:
+            return JsonResponse({'success': False, 'error': 'لا يوجد فرع نشط'})
+
+        if not _resolve_employee(invoice_branch, data):
+            return JsonResponse({
+                'success': False,
+                'error': 'الموظف مطلوب — اختره من القائمة أو أدخل كوده',
+            })
+
         try:
-            # استخدام atomic لمنع مشاكل الـ Race Condition وتداخل طلبات الـ Multi-user
             with transaction.atomic():
                 if invoice_id:
                     invoice = Invoice.objects.select_for_update().get(
@@ -276,20 +307,16 @@ def pos(request):
                             'error': 'التعديل مسموح على فواتير اليوم فقط',
                         })
                     
-                    # خصم القيمة القديمة من حساب العميل قبل التعديل لإعادة الاحتساب بدقة
                     if invoice.customer:
                         invoice.customer.total_spent -= invoice.final_total
                         invoice.customer.save()
                     
-                    # حذف العناصر القديمة لإعادة بنائها حسب التعديل الجديد
                     invoice.items.all().delete()
                 else:
-                    # حالة فاتورة جديدة تماماً
                     invoice = Invoice()
                     invoice.branch = branch or Branch.objects.first()
                     invoice.created_by = request.user
 
-                # إدخال وتحديث بيانات العميل
                 customer_name = data.get('customer_name', '').strip()
                 customer_phone = data.get('customer_phone', '').strip()
                 if customer_name:
@@ -302,14 +329,9 @@ def pos(request):
                 else:
                     invoice.customer = None
 
-                # إدخال وتحديث الحلاق
-                barber_id = data.get('barber')
-                if barber_id:
-                    invoice.barber = User.objects.get(id=barber_id)
-                else:
-                    invoice.barber = None
+                invoice.employee = _resolve_employee(invoice.branch, data)
+                invoice.barber = None
 
-                # طريقة الدفع والبنك
                 invoice.payment_method = data.get('payment_method', 'cash')
                 bank_id = data.get('bank')
                 if invoice.payment_method == 'bank' and bank_id:
@@ -327,10 +349,8 @@ def pos(request):
                     if booking_obj:
                         invoice.booking = booking_obj
                 
-                # حفظ مبدئي لتوليد السيريال والـ ID في قاعدة البيانات إن كانت جديدة
                 invoice.save()
 
-                # إعادة بناء عناصر الفاتورة واحتساب المجموع
                 subtotal = 0
                 for item in items:
                     service = Service.objects.get(id=item['id'])
@@ -345,9 +365,8 @@ def pos(request):
                     subtotal += item_total
 
                 invoice.subtotal = subtotal
-                invoice.save()  # الحفظ النهائي (يقوم موديل Invoice باحتساب final_total تلقائياً في دالة save)
+                invoice.save()
 
-                # تحديث إحصائياتspent العميل الإجمالية بعد الحفظ
                 if invoice.customer:
                     if not invoice_id:
                         invoice.customer.visits_count += 1
@@ -375,8 +394,8 @@ def pos(request):
 
     context = {
         'services': services,
-        'barbers': barbers,
         'banks': banks,
+        'employees': employees,
     }
     return render(request, 'salon/pos.html', context)
 
@@ -449,6 +468,8 @@ def _booking_payload(booking):
             'customer_name': booking.customer_name,
             'customer_phone': booking.customer_phone,
             'barber_id': booking.barber.id if booking.barber else '',
+            'employee_code': booking.employee.serial_number if booking.employee else '',
+            'employee_name': booking.employee.name if booking.employee else '',
             'notes': booking.notes,
             'items': items,
             'status': booking.status,
@@ -474,6 +495,8 @@ def _invoice_payload(invoice):
             'customer_name': invoice.customer.name if invoice.customer else '',
             'customer_phone': invoice.customer.phone if invoice.customer else '',
             'barber_id': invoice.barber.id if invoice.barber else '',
+            'employee_code': invoice.employee.serial_number if invoice.employee else '',
+            'employee_name': invoice.employee.name if invoice.employee else '',
             'payment_method': invoice.payment_method,
             'bank_id': invoice.bank.id if invoice.bank else '',
             'discount': str(invoice.discount),
@@ -519,19 +542,22 @@ def invoice_print(request, pk):
 
 @login_required
 def booking_list(request):
+    if not require_access(request, 'can_bookings'):
+        return redirect('dashboard')
     bookings = get_branch_queryset(request, Booking, 'queue_number')
     return render(request, 'salon/booking_list.html', {'bookings': bookings})
 
 
 @login_required
 def booking_add(request):
+    if not require_access(request, 'can_bookings'):
+        return redirect('dashboard')
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
     if not branch:
         messages.error(request, "لا يوجد فرع نشط")
         return redirect('dashboard')
 
     services = Service.objects.filter(is_active=True)
-    barbers = User.objects.filter(is_barber=True, branch=branch, is_active=True)
 
     if request.method == 'POST':
         try:
@@ -569,6 +595,9 @@ def booking_add(request):
             barber_id = data.get('barber')
             if barber_id:
                 booking.barber = User.objects.filter(id=barber_id).first()
+            booking.employee = _resolve_employee(branch, data)
+            if booking.employee:
+                booking.barber = None
             booking.save()
 
             service_ids = [item['id'] for item in items]
@@ -585,12 +614,13 @@ def booking_add(request):
 
     return render(request, 'salon/booking_form.html', {
         'services': services,
-        'barbers': barbers,
     })
 
 @login_required
 @require_POST
 def booking_status(request, pk):
+    if not require_access(request, 'can_bookings'):
+        return redirect('dashboard')
     booking = get_object_or_404(Booking, pk=pk)
     status = request.POST.get('status')
 
@@ -1574,6 +1604,8 @@ def expense_add(request):
 
 @login_required
 def reports_pdf(request):
+    if not require_access(request, 'can_reports'):
+        return redirect('dashboard')
     branch = get_user_branch(request)
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
@@ -1598,9 +1630,7 @@ def reports_pdf(request):
         total=Sum('final_total'), count=Count('id')
     ).order_by('-total')
 
-    barber_performance = invoices.values('barber__first_name', 'barber__last_name').annotate(
-        total_sales=Sum('final_total'), invoice_count=Count('id')
-    ).order_by('-total_sales')
+    employee_performance = _employee_performance(invoices)
 
     # إحصائيات الفروع
     branch_stats = []
@@ -1645,7 +1675,7 @@ def reports_pdf(request):
         'net_profit': net_profit,
         'total_invoices': total_invoices,
         'payment_breakdown': payment_breakdown,
-        'barber_performance': barber_performance,
+        'employee_performance': employee_performance,
         'branch_stats': branch_stats,
         'total_cash_all': total_cash_all,
         'total_bank_all': total_bank_all,
@@ -1678,6 +1708,8 @@ def reports_pdf(request):
 
 @login_required
 def reports(request):
+    if not require_access(request, 'can_reports'):
+        return redirect('dashboard')
     branch = get_user_branch(request)
     
     start_date = request.GET.get('start_date')
@@ -1706,11 +1738,8 @@ def reports(request):
         count=Count('id')
     ).order_by('-total')
 
-    # أداء الحلاقين
-    barber_performance = invoices.values('barber__first_name', 'barber__last_name').annotate(
-        total_sales=Sum('final_total'),
-        invoice_count=Count('id')
-    ).order_by('-total_sales')
+    # أداء الموظفين
+    employee_performance = _employee_performance(invoices)
 
     # 🔥 إحصائيات الفروع
     branch_stats = []
@@ -1775,7 +1804,7 @@ def reports(request):
         'net_profit': net_profit,
         'total_invoices': total_invoices,
         'payment_breakdown': payment_breakdown,
-        'barber_performance': barber_performance,
+        'employee_performance': employee_performance,
         'branch_stats': branch_stats,
         'total_cash_all': total_cash_all,        # 🔥
         'total_bank_all': total_bank_all,        # 🔥
@@ -1791,6 +1820,8 @@ def reports(request):
 
 @login_required
 def service_list(request):
+    if not require_access(request, 'can_services'):
+        return redirect('dashboard')
     services = get_branch_queryset(request, Service, 'code')
     return render(request, 'salon/service_list.html', {'services': services})
 
@@ -1798,6 +1829,8 @@ def service_list(request):
 @login_required
 def service_add(request):
     """تكويد خدمة — مسلسل + اسم + سعر + نشط."""
+    if not require_access(request, 'can_services'):
+        return redirect('dashboard')
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -1881,6 +1914,118 @@ def service_lookup(request):
 
 
 # =============================================================================
+# EMPLOYEES
+# =============================================================================
+
+@login_required
+def employee_list(request):
+    if not require_access(request, 'can_employees'):
+        return redirect('dashboard')
+    employees = get_branch_queryset(request, Employee, 'serial_number')
+    return render(request, 'salon/employee_list.html', {'employees': employees})
+
+
+@login_required
+def employee_add(request):
+    """تكويد موظف — كود + اسم + نشط."""
+    if not require_access(request, 'can_employees'):
+        return redirect('dashboard')
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            action = data.get('action', 'save')
+            employee_id = data.get('employee_id')
+            code = str(data.get('code', '')).strip()
+            name = data.get('name', '').strip()
+            is_active = bool(data.get('is_active', True))
+
+            if action == 'delete':
+                if not employee_id:
+                    return JsonResponse({'success': False, 'error': 'اختر موظفاً أولاً'})
+                employee = Employee.objects.get(id=employee_id)
+                if not request.user.is_superuser and employee.branch != branch:
+                    return JsonResponse({'success': False, 'error': 'غير مصرح'})
+                ok, msg = employee.can_delete_catalog()
+                if not ok:
+                    return JsonResponse({'success': False, 'error': msg})
+                employee.delete()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'تم حذف الموظف',
+                    'next_code': Employee.next_code(branch),
+                })
+
+            if not name:
+                return JsonResponse({'success': False, 'error': 'اسم الموظف مطلوب'})
+
+            if employee_id:
+                employee = Employee.objects.get(id=employee_id)
+                if not request.user.is_superuser and employee.branch != branch:
+                    return JsonResponse({'success': False, 'error': 'غير مصرح'})
+                employee.name = name
+                employee.is_active = is_active
+                employee.save(update_fields=['name', 'is_active'])
+                return JsonResponse({'success': True, 'message': 'تم تحديث الموظف'})
+
+            if not code:
+                code = Employee.next_code(branch)
+            elif Employee.objects.filter(branch=branch, serial_number=code).exists():
+                return JsonResponse({
+                    'success': False,
+                    'error': f'كود {code} موجود — اضغط Enter لتحميله',
+                })
+
+            Employee.objects.create(
+                branch=branch,
+                serial_number=code,
+                name=name,
+                is_active=is_active,
+                hire_date=timezone.localdate(),
+            )
+            return JsonResponse({
+                'success': True,
+                'message': f'تم تكويد الموظف {name}',
+                'next_code': Employee.next_code(branch),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/employee_form.html', {
+        'next_code': Employee.next_code(branch),
+    })
+
+
+@login_required
+def employee_lookup(request):
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'success': False, 'error': 'أدخل كود الموظف'})
+    if not branch:
+        return JsonResponse({'success': False, 'error': 'لا يوجد فرع'})
+    employee = Employee.objects.filter(branch=branch, serial_number=code).first()
+    if not employee:
+        return JsonResponse({'success': False, 'error': 'موظف غير موجود'})
+    can_del, del_msg = employee.can_delete_catalog()
+    return JsonResponse({
+        'success': True,
+        'employee': {
+            'id': employee.id,
+            'code': employee.serial_number,
+            'name': employee.name,
+            'is_active': employee.is_active,
+            'can_delete': can_del,
+            'delete_message': del_msg,
+        },
+    })
+
+
+# =============================================================================
 # PRODUCTS
 # =============================================================================
 
@@ -1914,12 +2059,16 @@ def product_add(request):
 
 @login_required
 def customer_list(request):
+    if not require_access(request, 'can_customers'):
+        return redirect('dashboard')
     customers = get_branch_queryset(request, Customer)
     return render(request, 'salon/customer_list.html', {'customers': customers})
 
 
 @login_required
 def customer_add(request):
+    if not require_access(request, 'can_customers'):
+        return redirect('dashboard')
     branch = get_user_branch(request)
 
     if request.method == 'POST':
@@ -1946,15 +2095,72 @@ def settings_view(request):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
+    salon_settings = SalonSettings.get()
+
+    if request.method == 'POST':
+        form_type = request.POST.get('form_type', 'salon')
+        if form_type == 'salon':
+            salon_settings.salon_name = request.POST.get('salon_name', '').strip() or 'صالون برو'
+            salon_settings.phone = request.POST.get('phone', '').strip()
+            salon_settings.address = request.POST.get('address', '').strip()
+            salon_settings.currency = request.POST.get('currency', 'EGP')
+            if request.FILES.get('logo'):
+                salon_settings.logo = request.FILES['logo']
+            salon_settings.save()
+            messages.success(request, "✅ تم حفظ إعدادات الصالون")
+        elif form_type == 'restore':
+            if not request.user.is_superuser:
+                messages.error(request, "⛔ الاستعادة متاحة للمدير فقط")
+                return redirect('settings')
+            if request.POST.get('confirm_restore') != 'RESTORE':
+                messages.error(request, "❌ اكتب RESTORE للتأكيد")
+                return redirect('settings')
+            backup_file = request.FILES.get('backup_file')
+            if not backup_file:
+                messages.error(request, "❌ اختر ملف SQL")
+                return redirect('settings')
+            if not backup_file.name.lower().endswith('.sql'):
+                messages.error(request, "❌ الملف يجب أن يكون .sql")
+                return redirect('settings')
+            try:
+                restore_backup_sql(backup_file)
+                messages.success(request, "✅ تمت استعادة قاعدة البيانات بنجاح")
+            except Exception as e:
+                messages.error(request, f"❌ فشل الاستعادة: {e}")
+            return redirect('settings')
+
     branches = Branch.objects.all() if request.user.is_superuser else Branch.objects.filter(id=get_user_branch(request).id) if get_user_branch(request) else Branch.objects.none()
-    users = User.objects.all() if request.user.is_superuser else User.objects.filter(branch=get_user_branch(request))
+    users = User.objects.all().order_by('user_code', 'username')
+    if not request.user.is_superuser:
+        users = users.filter(branch=get_user_branch(request))
     banks = Bank.objects.all() if request.user.is_superuser else Bank.objects.filter(branch=get_user_branch(request))
+
+    last_backup = latest_backup_info()
 
     return render(request, 'salon/settings.html', {
         'branches': branches,
         'users': users,
         'banks': banks,
+        'settings': salon_settings,
+        'last_backup': last_backup,
     })
+
+
+@login_required
+def settings_backup(request):
+    if not request.user.can_settings and not request.user.is_superuser:
+        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+        return redirect('dashboard')
+    try:
+        filepath = create_backup_sql()
+        with open(filepath, 'rb') as f:
+            content = f.read()
+        response = HttpResponse(content, content_type='application/sql')
+        response['Content-Disposition'] = f'attachment; filename="{filepath.name}"'
+        return response
+    except Exception as e:
+        messages.error(request, f"❌ {e}")
+        return redirect('settings')
 
 
 # =============================================================================
@@ -1976,6 +2182,30 @@ def check_user_permission(request, target_user=None):
     return True
 
 
+USER_ACCESS_FIELDS = (
+    'can_pos', 'can_inventory', 'can_expenses', 'can_reports',
+    'can_settings', 'can_users', 'can_bookings', 'can_customers', 'can_services',
+    'can_employees', 'is_active',
+)
+
+
+def _apply_user_access(user, data):
+    for field in USER_ACCESS_FIELDS:
+        if field == 'is_active':
+            setattr(user, field, bool(data.get(field, True)))
+        else:
+            setattr(user, field, bool(data.get(field)))
+
+
+def require_access(request, perm, redirect_to='dashboard'):
+    if request.user.is_superuser:
+        return True
+    if not getattr(request.user, perm, False):
+        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+        return False
+    return True
+
+
 @login_required
 def user_list(request):
     if not check_user_permission(request):
@@ -1993,104 +2223,161 @@ def user_list(request):
 
 @login_required
 def user_add(request):
+    """تكويد مستخدم — كود + إنشاء / تعديل صلاحيات وكلمة المرور."""
     if not check_user_permission(request):
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول لإضافة مستخدمين")
-        return redirect('dashboard')
+        messages.error(request, "⛔ ليس لديك صلاحية الوصول لإدارة المستخدمين")
+        return redirect('settings')
 
-    # تحديد الفروع المتاحة بناءً على الصلاحية
     if request.user.is_superuser:
-        branches = Branch.objects.all()
+        branches = Branch.objects.filter(is_active=True)
     else:
         user_branch = get_user_branch(request)
         branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
 
     if request.method == 'POST':
-        form = UserForm(request.POST)
-        if form.is_valid():
-            try:
-                user = form.save(commit=False)
-                
-                # إجبار حيازة الفرع لو مش سوبر يوزر منعاً للتلاعب بالـ HTML
-                if not request.user.is_superuser:
-                    user.branch = get_user_branch(request)
-                    
-                password = form.cleaned_data.get('password')
+        try:
+            data = json.loads(request.body)
+            action = data.get('action', 'save')
+            user_id = data.get('user_id')
+
+            if action == 'delete':
+                if not user_id:
+                    return JsonResponse({'success': False, 'error': 'اختر مستخدماً أولاً'})
+                user_obj = User.objects.get(id=user_id)
+                if not check_user_permission(request, target_user=user_obj):
+                    return JsonResponse({'success': False, 'error': 'غير مصرح'})
+                if user_obj == request.user:
+                    return JsonResponse({'success': False, 'error': 'لا يمكنك حذف حسابك الحالي'})
+                ok, msg = user_obj.can_delete_account()
+                if not ok:
+                    return JsonResponse({'success': False, 'error': msg})
+                user_obj.delete()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'تم حذف المستخدم',
+                    'next_code': User.next_code(),
+                })
+
+            if user_id:
+                user_obj = User.objects.get(id=user_id)
+                if not check_user_permission(request, target_user=user_obj):
+                    return JsonResponse({'success': False, 'error': 'غير مصرح'})
+                password = data.get('password', '').strip()
                 if password:
-                    user.set_password(password)
-                
-                user.save()
-                messages.success(request, f"✅ تم إنشاء المستخدم {user.username} بنجاح")
-                return redirect('user_list') # تم التعديل ليوجه لقائمة اليوزرز بدلاً من سيتنج الكبيرة
-            except Exception as e:
-                messages.error(request, f"❌ خطأ أثناء الحفظ: {str(e)}")
-        else:
-            messages.error(request, f"❌ يرجى تصحيح الأخطاء: {form.errors}")
-    else:
-        form = UserForm()
+                    user_obj.set_password(password)
+                if not user_obj.is_superuser:
+                    _apply_user_access(user_obj, data)
+                user_obj.save()
+                return JsonResponse({'success': True, 'message': 'تم تحديث المستخدم'})
+
+            username = data.get('username', '').strip()
+            first_name = data.get('first_name', '').strip()
+            last_name = data.get('last_name', '').strip()
+            password = data.get('password', '').strip()
+            branch_id = data.get('branch_id')
+            user_code = str(data.get('user_code', '')).strip()
+
+            if not username or not first_name or not password:
+                return JsonResponse({'success': False, 'error': 'اسم المستخدم والاسم وكلمة المرور مطلوبة'})
+            if User.objects.filter(username=username).exists():
+                return JsonResponse({'success': False, 'error': 'اسم المستخدم موجود مسبقاً'})
+            if not user_code:
+                user_code = User.next_code()
+            elif User.objects.filter(user_code=user_code).exists():
+                return JsonResponse({'success': False, 'error': f'كود {user_code} موجود — Enter لتحميله'})
+
+            if not request.user.is_superuser:
+                branch = get_user_branch(request)
+            else:
+                branch = Branch.objects.filter(id=branch_id).first() if branch_id else None
+            if not branch:
+                return JsonResponse({'success': False, 'error': 'اختر الفرع'})
+
+            user_obj = User(
+                user_code=user_code,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                email='',
+                branch=branch,
+            )
+            _apply_user_access(user_obj, data)
+            user_obj.set_password(password)
+            user_obj.save()
+            return JsonResponse({
+                'success': True,
+                'message': f'تم تكويد المستخدم {username}',
+                'next_code': User.next_code(),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
 
     return render(request, 'salon/user_form.html', {
-        'form': form,
         'branches': branches,
+        'next_code': User.next_code(),
+    })
+
+
+@login_required
+def user_lookup(request):
+    if not check_user_permission(request):
+        return JsonResponse({'success': False, 'error': 'غير مصرح'})
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'success': False, 'error': 'أدخل كود المستخدم'})
+    user_obj = User.objects.filter(user_code=code).first()
+    if not user_obj:
+        return JsonResponse({'success': False, 'error': 'مستخدم غير موجود'})
+    if not check_user_permission(request, target_user=user_obj):
+        return JsonResponse({'success': False, 'error': 'غير مصرح'})
+    can_del, del_msg = user_obj.can_delete_account()
+    return JsonResponse({
+        'success': True,
+        'user': {
+            'id': user_obj.id,
+            'user_code': user_obj.user_code,
+            'username': user_obj.username,
+            'full_name': user_obj.get_full_name() or user_obj.username,
+            'first_name': user_obj.first_name,
+            'last_name': user_obj.last_name,
+            'branch_name': str(user_obj.branch) if user_obj.branch else '—',
+            'is_superuser': user_obj.is_superuser,
+            'can_pos': user_obj.can_pos,
+            'can_inventory': user_obj.can_inventory,
+            'can_expenses': user_obj.can_expenses,
+            'can_reports': user_obj.can_reports,
+            'can_settings': user_obj.can_settings,
+            'can_users': user_obj.can_users,
+            'can_bookings': user_obj.can_bookings,
+            'can_customers': user_obj.can_customers,
+            'can_services': user_obj.can_services,
+            'can_employees': user_obj.can_employees,
+            'is_active': user_obj.is_active,
+            'can_delete': can_del,
+            'delete_message': del_msg,
+        },
     })
 
 
 @login_required
 def user_edit(request, pk):
-    user_obj = get_object_or_404(User, pk=pk)
-    
-    # التحقق من صلاحية التعديل على هذا المستخدم بالذات وفروعه
-    if not check_user_permission(request, target_user=user_obj):
-        messages.error(request, "⛔ غير مصرح لك بتعديل هذا المستخدم!")
-        return redirect('user_list')
-
-    # جلب الفروع هنا أيضاً (حل مشكلة عدم عمل الـ Edit بسبب حقل الفرع في التمبليت)
-    if request.user.is_superuser:
-        branches = Branch.objects.all()
-    else:
-        user_branch = get_user_branch(request)
-        branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
-
-    if request.method == 'POST':
-        form = UserForm(request.POST, instance=user_obj)
-        if form.is_valid():
-            user = form.save(commit=False)
-            password = form.cleaned_data.get('password')
-            if password:
-                user.set_password(password)
-            user.save()
-            messages.success(request, f"✅ تم تعديل المستخدم {user.username} بنجاح")
-            return redirect('user_list')
-        else:
-            messages.error(request, f"❌ خطأ في التعديل: {form.errors}")
-    else:
-        form = UserForm(instance=user_obj)
-
-    return render(request, 'salon/user_form.html', {
-        'form': form, 
-        'user_obj': user_obj,
-        'branches': branches # تم تمرير الفروع لضمان استقرار الفورم في التعديل
-    })
+    return redirect('user_add')
 
 
 @login_required
 @require_POST
 def user_delete(request, pk):
     user_obj = get_object_or_404(User, pk=pk)
-    
-    # التحقق من صلاحية الحذف على هذا المستخدم وفروعه
     if not check_user_permission(request, target_user=user_obj):
-        messages.error(request, "⛔ غير مصرح لك بحذف هذا المستخدم!")
-        return redirect('user_list')
-
-    # منع المستخدم من ان يحذف حسابه الحالي الذي يعمل به
+        return JsonResponse({'success': False, 'error': 'غير مصرح'})
     if user_obj == request.user:
-        messages.error(request, "❌ لا يمكنك حذف حسابك الحالي الذي تسجل به الدخول!")
-        return redirect('user_list')
-    
+        return JsonResponse({'success': False, 'error': 'لا يمكنك حذف حسابك الحالي'})
+    ok, msg = user_obj.can_delete_account()
+    if not ok:
+        return JsonResponse({'success': False, 'error': msg})
     username = user_obj.username
     user_obj.delete()
-    messages.success(request, f"✅ تم حذف المستخدم {username} نهائياً")
-    return redirect('user_list')
+    return JsonResponse({'success': True, 'message': f'تم حذف المستخدم {username}'})
 
 # =============================================================================
 # BRANCHES
@@ -2191,18 +2478,17 @@ def print_queue_ticket(request, pk):
     estimated_total = sum(s.price for s in booking.services.all())
 
     context = {
+        'booking': booking,
         'queue_number': booking.queue_number,
         'customer_name': booking.customer_name,
-        'barber_name': booking.barber.get_full_name() if booking.barber else '',
+        'employee_name': (
+            booking.employee.name if booking.employee
+            else (booking.barber.get_full_name() if booking.barber else '')
+        ),
         'services': services,
         'estimated_total': estimated_total,
         'now': timezone.now(),
-        'config': {
-            'shop_name': getattr(settings, 'SALON_NAME', 'Salon Pro'),
-            'shop_phone': getattr(settings, 'SALON_PHONE', ''),
-            'shop_address': getattr(settings, 'SALON_ADDRESS', ''),
-            'footer_text': 'شكراً لزيارتكم!',
-        }
+        'config': SalonSettings.get().print_config(request),
     }
 
     return render(request, 'salon/queue_receipt.html', context)
@@ -2217,12 +2503,7 @@ def print_invoice_receipt(request, pk):
     context = {
         'invoice': invoice,
         'items': items,
-        'config': {
-            'shop_name': getattr(settings, 'SALON_NAME', 'Salon Pro'),
-            'shop_phone': getattr(settings, 'SALON_PHONE', ''),
-            'shop_address': getattr(settings, 'SALON_ADDRESS', ''),
-            'footer_text': 'شكراً لزيارتكم!',
-        }
+        'config': SalonSettings.get().print_config(request),
     }
 
     return render(request, 'salon/invoice_receipt.html', context)
@@ -2241,9 +2522,13 @@ def print_direct_queue(request, pk):
         success, message = print_queue_ticket(
             queue_number=booking.queue_number,
             customer_name=booking.customer_name,
-            barber_name=booking.barber.get_full_name() if booking.barber else '',
+            employee_name=(
+                booking.employee.name if booking.employee
+                else (booking.barber.get_full_name() if booking.barber else '')
+            ),
             services=services,
-            estimated_total=estimated_total
+            estimated_total=estimated_total,
+            request=request,
         )
 
         return JsonResponse({'success': success, 'message': message})
@@ -2267,7 +2552,7 @@ def print_direct_invoice(request, pk):
         invoice = get_object_or_404(Invoice, pk=pk)
         items = invoice.items.all()
 
-        success, message = print_invoice_receipt(invoice, items)
+        success, message = print_invoice_receipt(invoice, items, request=request)
 
         return JsonResponse({'success': success, 'message': message})
     except ImportError:

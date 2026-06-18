@@ -250,26 +250,23 @@
     <div class="col-md-6">
         <div class="card">
             <div class="card-header bg-white border-0 pt-4 px-4">
-                <h5 class="fw-bold">✂️ أداء الحلاقين</h5>
+                <h5 class="fw-bold">👔 أداء الموظفين</h5>
             </div>
             <div class="card-body p-0">
                 <table class="table table-hover mb-0">
                     <thead class="bg-light">
                         <tr>
-                            <th class="px-4">الحلاق</th>
+                            <th class="px-4">الموظف</th>
                             <th>المبيعات</th>
                             <th>الفواتير</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for barber in barber_performance %}
+                        {% for row in employee_performance %}
                         <tr>
-                            <td class="px-4">
-                                {{ barber.barber__first_name|default:"" }} 
-                                {{ barber.barber__last_name|default:"" }}
-                            </td>
-                            <td class="fw-bold text-primary">{{ barber.total_sales|default:0 }} ج</td>
-                            <td>{{ barber.invoice_count|default:0 }}</td>
+                            <td class="px-4">{{ row.employee__name|default:"—" }}</td>
+                            <td class="fw-bold text-primary">{{ row.total_sales|default:0 }} ج</td>
+                            <td>{{ row.invoice_count|default:0 }}</td>
                         </tr>
                         {% empty %}
                         <tr>

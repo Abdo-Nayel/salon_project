@@ -1,0 +1,47 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}الموظفين - Salon Pro{% endblock %}
+{% block page_title %}الموظفين{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h3 class="fw-bold mb-0">الموظفين</h3>
+    <a href="/employees/add/" class="btn btn-primary"><i class="fas fa-plus me-1"></i> تكويد موظف</a>
+</div>
+
+<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead style="background:linear-gradient(90deg,#00b89422,#fff);">
+                    <tr>
+                        <th class="py-3 px-4">الكود</th>
+                        <th class="py-3">اسم الموظف</th>
+                        <th class="py-3">الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in employees %}
+                    <tr>
+                        <td class="px-4 text-muted fw-bold">{{ e.serial_number }}</td>
+                        <td class="fw-bold">{{ e.name }}</td>
+                        <td>
+                            {% if e.is_active %}
+                                <span class="badge bg-success rounded-pill px-3">نشط</span>
+                            {% else %}
+                                <span class="badge bg-secondary rounded-pill px-3">موقوف</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="text-center py-5 text-muted">
+                            لا موظفين — ابدأ بـ <a href="/employees/add/">تكويد موظف</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

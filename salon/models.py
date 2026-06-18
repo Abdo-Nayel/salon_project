@@ -29,6 +29,46 @@ class Branch(models.Model):
         return f"{'🏢 ' if self.is_main else '🏪 '}{self.name}"
 
 
+class SalonSettings(models.Model):
+    """إعدادات الصالون العامة — للطباعة والعرض في الإعدادات."""
+    salon_name = models.CharField(max_length=100, default='صالون برو', verbose_name="اسم الصالون")
+    phone = models.CharField(max_length=20, blank=True, verbose_name="الهاتف")
+    address = models.TextField(blank=True, verbose_name="العنوان")
+    logo = models.ImageField(upload_to='salon/logo/', blank=True, verbose_name="الشعار")
+    currency = models.CharField(max_length=10, default='EGP', verbose_name="العملة")
+    receipt_size = models.CharField(max_length=10, default='80mm', verbose_name="نمط الطباعة")
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name="الضريبة %")
+    auto_backup = models.BooleanField(default=False, verbose_name="نسخ احتياطي")
+    sms_notifications = models.BooleanField(default=False, verbose_name="SMS")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Salon Settings"
+        verbose_name_plural = "Salon Settings"
+
+    def __str__(self):
+        return self.salon_name
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def print_config(self, request=None):
+        logo_url = ''
+        if self.logo:
+            logo_url = self.logo.url
+            if request:
+                logo_url = request.build_absolute_uri(self.logo.url)
+        return {
+            'shop_name': self.salon_name or 'صالون برو',
+            'shop_phone': self.phone or '',
+            'shop_address': self.address or '',
+            'shop_logo': logo_url,
+            'footer_text': 'شكراً لزيارتكم!',
+        }
+
+
 # =============================================================================
 # USERS & PERMISSIONS
 # =============================================================================
@@ -38,6 +78,7 @@ class User(AbstractUser):
         Branch, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='users', verbose_name="Branch"
     )
+    user_code = models.CharField(max_length=20, blank=True, unique=True, verbose_name="كود المستخدم")
     phone = models.CharField(max_length=20, blank=True, verbose_name="Phone")
     photo = models.ImageField(upload_to='users/', blank=True, verbose_name="Photo")
     is_barber = models.BooleanField(default=False, verbose_name="Is Barber")
@@ -53,6 +94,16 @@ class User(AbstractUser):
     can_reports = models.BooleanField(default=True, verbose_name="Can Access Reports")
     can_settings = models.BooleanField(default=False, verbose_name="Can Access Settings")
     can_users = models.BooleanField(default=False, verbose_name="Can Manage Users")
+    can_audit = models.BooleanField(default=False, verbose_name="Can Access Audit")
+    can_bookings = models.BooleanField(default=False, verbose_name="Can Access Bookings")
+    can_customers = models.BooleanField(default=False, verbose_name="Can Access Customers")
+    can_services = models.BooleanField(default=False, verbose_name="Can Access Services")
+    can_employees = models.BooleanField(default=False, verbose_name="Can Access Employees")
+    can_delete_pos = models.BooleanField(default=False, verbose_name="Can Delete POS")
+    can_delete_bookings = models.BooleanField(default=False, verbose_name="Can Delete Bookings")
+    can_delete_expenses = models.BooleanField(default=False, verbose_name="Can Delete Expenses")
+    can_delete_inventory = models.BooleanField(default=False, verbose_name="Can Delete Inventory")
+    can_delete_employees = models.BooleanField(default=False, verbose_name="Can Delete Employees")
 
     class Meta:
         verbose_name = "User"
@@ -72,6 +123,32 @@ class User(AbstractUser):
     @property
     def can_see_all_branches(self):
         return self.is_superuser or (self.branch and self.branch.is_main)
+
+    @classmethod
+    def next_code(cls):
+        nums = []
+        for code in cls.objects.values_list('user_code', flat=True):
+            if str(code).isdigit():
+                nums.append(int(code))
+        return str(max(nums) + 1) if nums else '1'
+
+    def can_delete_account(self):
+        if self.is_superuser:
+            return False, 'لا يمكن حذف مدير النظام'
+        checks = [
+            (self.created_invoices.exists(), 'فواتير مبيعات'),
+            (self.invoices.exists(), 'فواتير كحلاق'),
+            (self.bookings.exists(), 'حجوزات'),
+            (self.purchase_invoices.exists(), 'مشتريات مخزن'),
+            (self.consumption_invoices.exists(), 'استهلاك مخزن'),
+            (self.expense_vouchers.exists(), 'سندات مصروفات'),
+            (self.created_expenses.exists(), 'مصروفات قديمة'),
+            (self.stock_movements.exists(), 'حركات مخزون'),
+        ]
+        linked = [label for ok, label in checks if ok]
+        if linked:
+            return False, 'مربوط بـ: ' + '، '.join(linked)
+        return True, ''
 
 
 # =============================================================================
@@ -409,6 +486,58 @@ class Customer(models.Model):
 
 
 # =============================================================================
+# EMPLOYEES
+# =============================================================================
+
+class Employee(models.Model):
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name='employees',
+        verbose_name="Branch",
+    )
+    serial_number = models.CharField(max_length=30, verbose_name="كود الموظف")
+    name = models.CharField(max_length=100, verbose_name="اسم الموظف")
+    phone = models.CharField(max_length=20, blank=True, default='', verbose_name="Phone")
+    job_title = models.CharField(max_length=50, blank=True, default='', verbose_name="الوظيفة")
+    base_salary = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0, verbose_name="الراتب",
+    )
+    hire_date = models.DateField(verbose_name="تاريخ التعيين")
+    is_active = models.BooleanField(default=True, verbose_name="نشط")
+    notes = models.TextField(blank=True, default='', verbose_name="Notes")
+    daily_number = models.PositiveIntegerField(default=0, verbose_name="رقم يومي")
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employee_profile', verbose_name="User",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'salon_employee'
+        verbose_name = "Employee"
+        verbose_name_plural = "Employees"
+        ordering = ['serial_number']
+        unique_together = [('branch', 'serial_number')]
+
+    def __str__(self):
+        return f"{self.serial_number} - {self.name}"
+
+    @classmethod
+    def next_code(cls, branch):
+        nums = []
+        for sn in cls.objects.filter(branch=branch).values_list('serial_number', flat=True):
+            if str(sn).isdigit():
+                nums.append(int(sn))
+        return str(max(nums) + 1) if nums else '1'
+
+    def can_delete_catalog(self):
+        if self.invoices.exists():
+            return False, 'لا يمكن الحذف — الموظف مربوط بفواتير'
+        if self.bookings.exists():
+            return False, 'لا يمكن الحذف — الموظف مربوط بحجوزات'
+        return True, ''
+
+
+# =============================================================================
 # INVOICES & POS
 # =============================================================================
 
@@ -430,6 +559,10 @@ class Invoice(models.Model):
     barber = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='invoices', verbose_name="Barber"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='invoices', verbose_name="Employee",
     )
     invoice_number = models.CharField(max_length=20, verbose_name="رقم الفاتورة")
     serial_number = models.PositiveIntegerField(
@@ -592,6 +725,10 @@ class Booking(models.Model):
     barber = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='bookings', verbose_name="Barber"
+    )
+    employee = models.ForeignKey(
+        Employee, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bookings', verbose_name="Employee",
     )
     queue_number = models.PositiveIntegerField(verbose_name="Queue #")
     serial_number = models.PositiveIntegerField(

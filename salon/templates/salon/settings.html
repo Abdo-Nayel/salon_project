@@ -11,8 +11,19 @@
                 <h5 class="fw-bold">🏢 إعدادات الصالون</h5>
             </div>
             <div class="card-body">
-                <form method="post">
+                <form method="post" enctype="multipart/form-data">
                     {% csrf_token %}
+                    <input type="hidden" name="form_type" value="salon">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">شعار الصالون (للطباعة)</label>
+                        {% if settings.logo %}
+                        <div class="mb-2">
+                            <img src="{{ settings.logo.url }}" alt="الشعار" style="max-height:80px; max-width:200px; object-fit:contain;" class="border rounded p-1">
+                        </div>
+                        {% endif %}
+                        <input type="file" class="form-control" name="logo" accept="image/*">
+                        <small class="text-muted">يظهر أعلى فاتورة المبيعات وتذكرة الحجز عند الطباعة</small>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">اسم الصالون</label>
                         <input type="text" class="form-control" name="salon_name" value="{{ settings.salon_name|default:"صالون برو" }}">
@@ -42,43 +53,51 @@
         </div>
     </div>
 
-    <!-- System Settings -->
+    <!-- Backup & Restore -->
     <div class="col-md-6">
         <div class="card">
             <div class="card-header bg-white border-0 pt-4 px-4">
-                <h5 class="fw-bold">⚡ إعدادات النظام</h5>
+                <h5 class="fw-bold">💾 نسخ احتياطي</h5>
             </div>
             <div class="card-body">
-                <form method="post">
+                <p class="text-muted mb-2">نسخة SQL كاملة من قاعدة البيانات (PostgreSQL)</p>
+                {% if last_backup %}
+                <p class="small mb-3">
+                    <strong>آخر نسخة:</strong> {{ last_backup.mtime|date:"Y-m-d H:i" }}
+                    <span class="text-muted">({{ last_backup.filename }})</span>
+                </p>
+                {% else %}
+                <p class="text-muted mb-3">لم يتم عمل نسخة بعد</p>
+                {% endif %}
+
+                <a href="/settings/backup/" class="btn btn-success mb-4">
+                    <i class="fas fa-download me-2"></i> تحميل نسخة SQL
+                </a>
+
+                {% if request.user.is_superuser %}
+                <hr>
+                <h6 class="fw-bold text-danger mb-2">استعادة من ملف SQL</h6>
+                <div class="alert alert-warning py-2 small">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    سيتم استبدال بيانات قاعدة البيانات الحالية. تأكد من أخذ نسخة احتياطية أولاً.
+                </div>
+                <form method="post" enctype="multipart/form-data" onsubmit="return confirmRestore()">
                     {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">نمط الطباعة</label>
-                        <select class="form-select" name="receipt_size">
-                            <option value="80mm" {% if settings.receipt_size == '80mm' %}selected{% endif %}>🧾 80mm (حراري)</option>
-                            <option value="58mm" {% if settings.receipt_size == '58mm' %}selected{% endif %}>🧾 58mm (صغير)</option>
-                            <option value="A4" {% if settings.receipt_size == 'A4' %}selected{% endif %}>📄 A4 (عادي)</option>
-                        </select>
+                    <input type="hidden" name="form_type" value="restore">
+                    <div class="mb-2">
+                        <input type="file" class="form-control" name="backup_file" accept=".sql" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold">الضريبة (%)</label>
-                        <input type="number" class="form-control" name="tax_rate" value="{{ settings.tax_rate|default:0 }}" min="0" max="100">
+                        <label class="form-label small fw-bold">اكتب <code>RESTORE</code> للتأكيد</label>
+                        <input type="text" class="form-control" name="confirm_restore" placeholder="RESTORE" autocomplete="off">
                     </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="auto_backup" {% if settings.auto_backup %}checked{% endif %}>
-                            <label class="form-check-label fw-bold">نسخ احتياطي تلقائي</label>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="sms_notifications" {% if settings.sms_notifications %}checked{% endif %}>
-                            <label class="form-check-label fw-bold">إشعارات SMS</label>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save me-2"></i> حفظ
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="fas fa-upload me-2"></i> استعادة قاعدة البيانات
                     </button>
                 </form>
+                {% else %}
+                <p class="small text-muted mb-0">الاستعادة متاحة للمدير (superuser) فقط.</p>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -184,30 +203,54 @@
         </div>
     </div>
 
+    <!-- Employees Management -->
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold">👔 إدارة الموظفين</h5>
+                {% if request.user.is_superuser or request.user.can_employees %}
+                <a href="/employees/add/" class="btn btn-sm btn-success">+ تكويد موظف</a>
+                {% endif %}
+            </div>
+            <div class="card-body px-4 py-3">
+                <p class="text-muted mb-2 small">كوّد الموظفين هنا — يُستخدم الكود في نقطة البيع وحجز VIP والتقارير.</p>
+                {% if request.user.is_superuser or request.user.can_employees %}
+                <a href="/employees/" class="btn btn-outline-success btn-sm me-2">قائمة الموظفين</a>
+                <a href="/employees/add/" class="btn btn-outline-secondary btn-sm">تكويد موظف</a>
+                {% else %}
+                <span class="text-muted small">ليس لديك صلاحية إدارة الموظفين</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
     <!-- Users Management -->
     <div class="col-md-12">
         <div class="card">
             <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
                 <h5 class="fw-bold">👥 إدارة المستخدمين</h5>
-                <a href="/users/add/" class="btn btn-sm btn-primary">+ مستخدم جديد</a>
+                {% if request.user.is_superuser or request.user.can_users %}
+                <a href="/users/add/" class="btn btn-sm btn-primary">+ تكويد مستخدم</a>
+                {% endif %}
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="bg-light">
                             <tr>
-                                <th class="py-3 px-4">الاسم</th>
+                                <th class="py-3 px-4">كود</th>
+                                <th class="py-3">الاسم</th>
                                 <th class="py-3">اسم المستخدم</th>
                                 <th class="py-3">الفرع</th>
                                 <th class="py-3">الصلاحيات</th>
                                 <th class="py-3">الحالة</th>
-                                <th class="py-3">إجراءات</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for user in users %}
                             <tr>
-                                <td class="px-4 fw-bold">{{ user.get_full_name|default:user.username }}</td>
+                                <td class="px-4 fw-bold text-primary">{{ user.user_code|default:"—" }}</td>
+                                <td class="fw-bold">{{ user.get_full_name|default:user.username }}</td>
                                 <td>{{ user.username }}</td>
                                 <td><span class="badge bg-info">{{ user.branch|default:"الرئيسي" }}</span></td>
                                 <td>
@@ -221,16 +264,10 @@
                                 </td>
                                 <td>
                                     {% if user.is_active %}
-                                        <span class="badge bg-success">✅ نشط</span>
+                                        <span class="badge bg-success">نشط</span>
                                     {% else %}
-                                        <span class="badge bg-secondary">❌ معطل</span>
+                                        <span class="badge bg-secondary">موقوف</span>
                                     {% endif %}
-                                </td>
-                                <td>
-                                    <div class="btn-group">
-                                        <a href="/users/{{ user.id }}/edit/" class="btn btn-sm btn-outline-primary">✏️</a>
-                                        <button class="btn btn-sm btn-outline-danger" onclick="deleteUser({{ user.id }})">🗑️</button>
-                                    </div>
                                 </td>
                             </tr>
                             {% empty %}
@@ -244,88 +281,24 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Backup & Restore -->
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header bg-white border-0 pt-4 px-4">
-                <h5 class="fw-bold">💾 نسخ احتياطي</h5>
-            </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">آخر نسخة احتياطية: {{ last_backup|default:"لم يتم عمل نسخة" }}</p>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-success" onclick="alert('سيتم إضافة هذه الميزة قريباً')">
-                        <i class="fas fa-download me-2"></i> تحميل نسخة
-                    </button>
-                    <button class="btn btn-outline-primary" onclick="document.getElementById('restoreFile').click()">
-                        <i class="fas fa-upload me-2"></i> استعادة
-                    </button>
-                    <input type="file" id="restoreFile" class="d-none" accept=".json,.sql">
+                {% if request.user.is_superuser or request.user.can_users %}
+                <div class="px-4 py-3 border-top bg-light small text-muted">
+                    للتعديل أو الحذف: افتح <a href="/users/add/">تكويد مستخدم</a> وأدخل الكود ثم Enter
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Danger Zone -->
-    <div class="col-md-6">
-        <div class="card border-danger">
-            <div class="card-header bg-white border-0 pt-4 px-4">
-                <h5 class="fw-bold text-danger">⚠️ Reset Program</h5>
-            </div>
-            <div class="card-body">
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    هذه الإجراءات لا يمكن التراجع عنها!
-                </div>
-                <div class="d-flex gap-2">
-                    <button class="btn btn-outline-danger" onclick="confirmReset()">
-                        <i class="fas fa-trash me-2"></i> مسح البيانات
-                    </button>
-                    <button class="btn btn-outline-warning" onclick="confirmFactoryReset()">
-                        <i class="fas fa-undo me-2"></i> إعادة ضبط المصنع
-                    </button>
-                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 
 <script>
-function deleteUser(id) {
-    if (confirm('هل أنت متأكد من حذف هذا المستخدم؟')) {
-        fetch(`/users/${id}/delete/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
-            }
-        }).then(r => r.json()).then(data => {
-            if (data.success) location.reload();
-        });
+function confirmRestore() {
+    const input = document.querySelector('input[name="confirm_restore"]');
+    if (!input || input.value.trim() !== 'RESTORE') {
+        alert('اكتب RESTORE في حقل التأكيد');
+        return false;
     }
-}
-
-function confirmReset() {
-    if (confirm('⚠️ هل أنت متأكد؟ سيتم مسح كل البيانات!')) {
-        if (confirm('🚨 تأكيد نهائي: اكتب "نعم" للمسح')) {
-            fetch('/settings/reset/', {
-                method: 'POST',
-                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-            }).then(() => location.reload());
-        }
-    }
-}
-
-function confirmFactoryReset() {
-    if (confirm('⚠️ هل أنت متأكد؟ سيتم إعادة البرنامج لحالته الأولية!')) {
-        fetch('/settings/factory-reset/', {
-            method: 'POST',
-            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-        }).then(() => location.reload());
-    }
+    return confirm('⚠️ تحذير نهائي: سيتم استبدال كل بيانات قاعدة البيانات. هل أنت متأكد؟');
 }
 </script>
 {% endblock %}

@@ -48,7 +48,7 @@
                 <div class="d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded">
                     <div>
                         <span class="fw-bold">#{{ booking.queue_number }}</span> - {{ booking.customer_name }}
-                        {% if booking.barber %}<span class="badge bg-info ms-2">{{ booking.barber.get_full_name|default:booking.barber.username }}</span>{% endif %}
+                        {% if booking.employee %}<span class="badge bg-info ms-2">{{ booking.employee.name }}</span>{% elif booking.barber %}<span class="badge bg-info ms-2">{{ booking.barber.get_full_name|default:booking.barber.username }}</span>{% endif %}
                     </div>
                     <span class="badge {% if booking.status == 'waiting' %}bg-warning{% elif booking.status == 'in_progress' %}bg-primary{% else %}bg-success{% endif %}">
                         {% if booking.status == 'waiting' %}⏳{% elif booking.status == 'in_progress' %}✂️{% else %}✅{% endif %}

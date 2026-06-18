@@ -1,146 +1,218 @@
 {% extends "salon/simple_base.html" %}
-{% block title %}👤 مستخدم جديد - صالون برو{% endblock %}
-{% block page_title %}مستخدم جديد{% endblock %}
+{% block title %}تكويد مستخدم{% endblock %}
+{% block page_title %}تكويد مستخدم{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header bg-white border-0 pt-4 px-4">
-                <h5 class="fw-bold">👤 إضافة مستخدم جديد</h5>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header text-white d-flex justify-content-between" style="background:linear-gradient(135deg,#0984e3,#6c5ce7);">
+                <h5 class="mb-0"><i class="fas fa-user-cog me-2"></i> تكويد مستخدم</h5>
+                <small>التالي: {{ next_code }}</small>
             </div>
             <div class="card-body p-4">
-                <form method="post">
-                    {% csrf_token %}
+                <label class="form-label fw-bold small">كود المستخدم</label>
+                <input type="text" id="userCode" class="form-control mb-2" placeholder="الكود — Enter للتحميل" value="{{ next_code }}" inputmode="numeric">
 
+                <div id="userInfo" class="alert alert-info py-2 small d-none mb-3"></div>
+
+                <div id="userActions" class="d-none d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-danger flex-fill" id="btnDeleteUser" onclick="deleteUser()">حذف</button>
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="newUser()">مستخدم جديد</button>
+                </div>
+
+                <div id="createFields">
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">الاسم الأول</label>
-                            <input type="text" class="form-control" name="first_name" placeholder="مثال: أحمد" required>
+                            <label class="form-label fw-bold small">الاسم الأول *</label>
+                            <input type="text" id="firstName" class="form-control">
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">الاسم الأخير</label>
-                            <input type="text" class="form-control" name="last_name" placeholder="مثال: محمد" required>
+                            <label class="form-label fw-bold small">الاسم الأخير</label>
+                            <input type="text" id="lastName" class="form-control">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">اسم المستخدم *</label>
-                            <input type="text" class="form-control" name="username" placeholder="مثال: ahmed123" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">البريد الإلكتروني</label>
-                            <input type="email" class="form-control" name="email" placeholder="example@email.com">
+                            <label class="form-label fw-bold small">اسم المستخدم *</label>
+                            <input type="text" id="username" class="form-control">
                         </div>
                     </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">كلمة المرور *</label>
-                            <input type="password" class="form-control" name="password" placeholder="********" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">تأكيد كلمة المرور *</label>
-                            <input type="password" class="form-control" name="confirm_password" placeholder="********" required>
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">الفرع *</label>
-                            <select class="form-select" name="branch" required>
-                                <option value="">-- اختر الفرع --</option>
-                                {% for branch in branches %}
-                                <option value="{{ branch.id }}">{{ branch.name }} {% if branch.is_main %}(رئيسي){% endif %}</option>
-                                {% empty %}
-                                <option value="" disabled>لا يوجد فروع - أضف فرع أولاً</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold">نوع المستخدم</label>
-                            <select class="form-select" name="user_type">
-                                <option value="cashier">💳 كاشير</option>
-                                <option value="barber">✂️ حلاق</option>
-                                <option value="manager">📊 مدير فرع</option>
-                                <option value="admin">👑 مدير نظام</option>
-                            </select>
-                        </div>
-                    </div>
-
+                    {% if request.user.is_superuser %}
                     <div class="mb-3">
-                        <label class="form-label fw-bold">الصلاحيات</label>
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_pos" checked>
-                                    <label class="form-check-label">نقطة البيع</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_inventory">
-                                    <label class="form-check-label">المخزن</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_expenses">
-                                    <label class="form-check-label">المصروفات</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_reports">
-                                    <label class="form-check-label">التقارير</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_bookings" checked>
-                                    <label class="form-check-label">الحجوزات</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_customers" checked>
-                                    <label class="form-check-label">العملاء</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_settings">
-                                    <label class="form-check-label">الإعدادات</label>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="can_users">
-                                    <label class="form-check-label">المستخدمين</label>
-                                </div>
-                            </div>
-                        </div>
+                        <label class="form-label fw-bold small">الفرع *</label>
+                        <select id="branchId" class="form-select">
+                            <option value="">-- اختر الفرع --</option>
+                            {% for branch in branches %}
+                            <option value="{{ branch.id }}">{{ branch.name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
+                    {% endif %}
+                </div>
 
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="is_active" checked>
-                            <label class="form-check-label fw-bold">حساب نشط</label>
-                        </div>
-                    </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold small" id="passwordLabel">كلمة المرور *</label>
+                    <input type="password" id="password" class="form-control" placeholder="********">
+                    <small class="text-muted" id="passwordHint"></small>
+                </div>
 
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary flex-fill">
-                            <i class="fas fa-save me-2"></i> حفظ المستخدم
-                        </button>
-                        <a href="/settings/" class="btn btn-secondary">
-                            <i class="fas fa-times me-2"></i> إلغاء
-                        </a>
+                <div class="mb-3" id="permissionsBlock">
+                    <label class="form-label fw-bold small">الصلاحيات</label>
+                    <div class="row g-2">
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_pos"><label class="form-check-label" for="can_pos">نقطة البيع</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_bookings"><label class="form-check-label" for="can_bookings">الحجوزات</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_inventory"><label class="form-check-label" for="can_inventory">المخزن</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_expenses"><label class="form-check-label" for="can_expenses">المصروفات</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_reports"><label class="form-check-label" for="can_reports">التقارير</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_services"><label class="form-check-label" for="can_services">الخدمات</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_customers"><label class="form-check-label" for="can_customers">العملاء</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_settings"><label class="form-check-label" for="can_settings">الإعدادات</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_users"><label class="form-check-label" for="can_users">المستخدمين</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="can_employees"><label class="form-check-label" for="can_employees">الموظفين</label></div></div>
+                        <div class="col-md-4"><div class="form-check"><input class="form-check-input perm" type="checkbox" id="is_active" checked><label class="form-check-label" for="is_active">نشط</label></div></div>
                     </div>
-                </form>
+                </div>
+
+                <button type="button" class="btn w-100 btn-lg text-white" style="background:linear-gradient(135deg,#0984e3,#6c5ce7);" onclick="saveUser()">
+                    <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ المستخدم</span>
+                </button>
+                <a href="/settings/" class="btn btn-outline-secondary w-100 mt-2">رجوع للإعدادات</a>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+let currentUserId = null;
+let canDeleteUser = false;
+let isSuperuserLoaded = false;
+
+const permIds = ['can_pos','can_bookings','can_inventory','can_expenses','can_reports','can_services','can_customers','can_settings','can_users','can_employees','is_active'];
+
+document.getElementById('userCode').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); loadUser(); }
+});
+
+function setPerms(u) {
+    permIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!u[id];
+    });
+}
+
+function getPerms() {
+    const o = {};
+    permIds.forEach(id => { o[id] = document.getElementById(id).checked; });
+    return o;
+}
+
+function setEditMode(on, u) {
+    document.getElementById('createFields').classList.toggle('d-none', on);
+    document.getElementById('passwordLabel').textContent = on ? 'كلمة مرور جديدة' : 'كلمة المرور *';
+    document.getElementById('passwordHint').textContent = on ? 'اتركها فارغة إن لم تُرد التغيير' : '';
+    document.getElementById('password').required = !on;
+    const permsBlock = document.getElementById('permissionsBlock');
+    if (on && u && u.is_superuser) {
+        permsBlock.classList.add('d-none');
+    } else {
+        permsBlock.classList.remove('d-none');
+    }
+}
+
+function loadUser() {
+    const code = document.getElementById('userCode').value.trim();
+    if (!code) return;
+    fetch(`/users/lookup/?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'مستخدم غير موجود');
+                newUser();
+                return;
+            }
+            const u = data.user;
+            currentUserId = u.id;
+            canDeleteUser = u.can_delete;
+            isSuperuserLoaded = u.is_superuser;
+            setEditMode(true, u);
+            document.getElementById('password').value = '';
+            setPerms(u);
+            const info = document.getElementById('userInfo');
+            info.innerHTML = `<strong>${u.full_name}</strong> — @${u.username} — ${u.branch_name}`;
+            if (!u.can_delete) info.innerHTML += `<br><span class="text-warning">${u.delete_message}</span>`;
+            info.classList.remove('d-none');
+            document.getElementById('userActions').classList.remove('d-none');
+            document.getElementById('btnDeleteUser').style.display = u.can_delete ? 'block' : 'none';
+            document.getElementById('saveLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newUser() {
+    currentUserId = null;
+    canDeleteUser = false;
+    isSuperuserLoaded = false;
+    document.getElementById('userCode').value = '{{ next_code }}';
+    document.getElementById('firstName').value = '';
+    document.getElementById('lastName').value = '';
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+    const branch = document.getElementById('branchId');
+    if (branch) branch.value = '';
+    setPerms({ is_active: true });
+    setEditMode(false);
+    document.getElementById('userInfo').classList.add('d-none');
+    document.getElementById('userActions').classList.add('d-none');
+    document.getElementById('saveLabel').textContent = 'حفظ المستخدم';
+}
+
+function saveUser() {
+    const payload = { action: 'save', ...getPerms() };
+    const password = document.getElementById('password').value;
+    if (password) payload.password = password;
+
+    if (currentUserId) {
+        payload.user_id = currentUserId;
+    } else {
+        payload.user_code = document.getElementById('userCode').value.trim();
+        payload.first_name = document.getElementById('firstName').value.trim();
+        payload.last_name = document.getElementById('lastName').value.trim();
+        payload.username = document.getElementById('username').value.trim();
+        const branch = document.getElementById('branchId');
+        if (branch) payload.branch_id = branch.value;
+        if (!payload.first_name || !payload.username || !password) {
+            alert('أكمل البيانات المطلوبة'); return;
+        }
+    }
+
+    fetch('/users/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            if (data.next_code) document.querySelector('.card-header small').textContent = 'التالي: ' + data.next_code;
+            newUser();
+            if (data.next_code) document.getElementById('userCode').value = data.next_code;
+        } else alert(data.error);
+    });
+}
+
+function deleteUser() {
+    if (!currentUserId || !canDeleteUser) return;
+    if (!confirm('حذف هذا المستخدم؟')) return;
+    fetch('/users/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ action: 'delete', user_id: currentUserId }),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            document.getElementById('userCode').value = data.next_code || '1';
+            newUser();
+        } else alert(data.error);
+    });
+}
+</script>
 {% endblock %}
