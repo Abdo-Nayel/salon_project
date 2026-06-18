@@ -71,7 +71,7 @@
                 {% for inv in recent_invoices|slice:":5" %}
                 <div class="d-flex justify-content-between align-items-center p-3 mb-2 bg-light rounded">
                     <div>
-                        <span class="fw-bold">#{{ inv.invoice_number }}</span>
+                        <span class="fw-bold">#{{ inv.display_number }}</span>
                         {% if inv.customer %}<span class="text-muted">- {{ inv.customer.name }}</span>{% endif %}
                     </div>
                     <div>

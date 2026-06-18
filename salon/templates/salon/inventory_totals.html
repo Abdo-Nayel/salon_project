@@ -1,0 +1,68 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}صافي إجماليات المخزون{% endblock %}
+{% block page_title %}صافي إجماليات المخزون{% endblock %}
+
+{% block content %}
+<style>
+.inv-totals-hero {
+    background: linear-gradient(135deg, #2c3e50 0%, #4ca1af 100%);
+    color: #fff; border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
+}
+</style>
+
+<div class="inv-totals-hero d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h3 class="fw-bold mb-1">صافي إجماليات المخزون</h3>
+        <small class="opacity-75">الكمية المتبقية × متوسط التكلفة والبيع</small>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/inventory/totals/pdf/" target="_blank" class="btn btn-light btn-sm fw-bold">
+            <i class="fas fa-file-pdf text-danger me-1"></i> طباعة PDF
+        </a>
+        <a href="/inventory/" class="btn btn-outline-light btn-sm">رجوع</a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead style="background:linear-gradient(90deg,#667eea22,#fff);">
+                    <tr>
+                        <th class="px-4 py-3">كود</th>
+                        <th class="py-3">اسم الصنف</th>
+                        <th class="py-3">العدد المتبقي</th>
+                        <th class="py-3">متوسط التكلفة</th>
+                        <th class="py-3">إجمالي التكلفة</th>
+                        <th class="py-3">متوسط البيع</th>
+                        <th class="py-3">إجمالي البيع</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td class="px-4 text-muted">{{ row.product.code|default:"—" }}</td>
+                        <td class="fw-bold">{{ row.product.name }}</td>
+                        <td><span class="badge bg-primary rounded-pill px-3">{{ row.qty }}</span></td>
+                        <td>{{ row.avg_cost|floatformat:2 }} ج</td>
+                        <td class="text-danger fw-bold">{{ row.line_cost|floatformat:2 }} ج</td>
+                        <td>{{ row.avg_price|floatformat:2 }} ج</td>
+                        <td class="text-success fw-bold">{{ row.line_sale|floatformat:2 }} ج</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center py-5 text-muted">لا أصناف</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light fw-bold fs-5">
+                    <tr>
+                        <td colspan="4" class="text-end px-4 py-3">صافي الإجمالي:</td>
+                        <td class="text-danger py-3">{{ grand_cost|floatformat:2 }} ج</td>
+                        <td class="py-3"></td>
+                        <td class="text-success py-3">{{ grand_sale|floatformat:2 }} ج</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}{% if is_return %}مرتد مصروف{% else %}مصروف{% endif %}{% endblock %}
+{% block page_title %}{% if is_return %}مرتد مصروف{% else %}مصروف{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:{{ header_bg }};">
+                <h5 class="mb-0">
+                    <i class="fas {% if is_return %}fa-undo{% else %}fa-money-bill-wave{% endif %} me-2"></i>
+                    {% if is_return %}مرتد مصروف{% else %}تسجيل مصروف{% endif %}
+                </h5>
+                <span class="badge bg-light text-dark">التالي: {{ next_serial }}</span>
+            </div>
+            <div class="card-body p-4">
+                <input type="text" id="voucherSerial" class="form-control mb-2" placeholder="مسلسل السند — Enter للتحميل" inputmode="numeric">
+
+                <div id="voucherActions" class="d-none d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-sm btn-danger flex-fill" onclick="deleteVoucher()">حذف السند</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" onclick="newVoucher()">سند جديد</button>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">المصروف *</label>
+                    <select id="expenseType" class="form-select">
+                        <option value="">-- اختر المصروف --</option>
+                        {% for t in expense_types %}
+                        <option value="{{ t.id }}">{% if t.code %}{{ t.code }} — {% endif %}{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if not expense_types %}
+                    <small class="text-danger">لا مصروفات مكودة — <a href="/expenses/type/add/">أضف مصروفاً أولاً</a></small>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">طريقة الدفع</label>
+                    <div class="d-flex gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payMethod" id="payCash" value="cash" checked onchange="toggleBank()">
+                            <label class="form-check-label" for="payCash">كاش</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payMethod" id="payBank" value="bank" onchange="toggleBank()">
+                            <label class="form-check-label" for="payBank">بنك</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3 d-none" id="bankWrap">
+                    <label class="form-label fw-bold small">البنك *</label>
+                    <select id="bankSelect" class="form-select">
+                        <option value="">-- اختر البنك --</option>
+                        {% for b in banks %}
+                        <option value="{{ b.id }}">{{ b.name }}{% if b.account_number %} — {{ b.account_number }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">المبلغ *</label>
+                    <div class="input-group">
+                        <input type="number" id="amount" class="form-control form-control-lg" min="0.01" step="0.01" placeholder="0.00">
+                        <span class="input-group-text">ج</span>
+                    </div>
+                </div>
+
+                <button type="button" class="btn w-100 btn-lg text-white" style="background:{{ header_bg }};" onclick="saveVoucher()">
+                    <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ السند</span>
+                </button>
+                <a href="/expenses/" class="btn btn-outline-secondary w-100 mt-2">رجوع</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const SAVE_URL = '{{ save_url }}';
+const LOOKUP_URL = '{{ lookup_url }}';
+const DELETE_PREFIX = '{{ delete_prefix }}';
+let currentVoucherId = null;
+
+document.getElementById('voucherSerial').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); loadVoucher(); }
+});
+
+function toggleBank() {
+    const isBank = document.getElementById('payBank').checked;
+    document.getElementById('bankWrap').classList.toggle('d-none', !isBank);
+}
+
+function loadVoucher() {
+    const serial = document.getElementById('voucherSerial').value.trim();
+    if (!serial) return;
+    fetch(`${LOOKUP_URL}?serial=${encodeURIComponent(serial)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.error || 'سند غير موجود'); return; }
+            const v = data.voucher;
+            currentVoucherId = v.id;
+            document.getElementById('expenseType').value = v.expense_type_id;
+            document.getElementById('amount').value = v.amount;
+            if (v.payment_method === 'bank') {
+                document.getElementById('payBank').checked = true;
+                document.getElementById('bankSelect').value = v.bank_id || '';
+            } else {
+                document.getElementById('payCash').checked = true;
+            }
+            toggleBank();
+            document.getElementById('voucherActions').classList.remove('d-none');
+            document.getElementById('saveLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newVoucher() {
+    currentVoucherId = null;
+    document.getElementById('voucherSerial').value = '';
+    document.getElementById('expenseType').value = '';
+    document.getElementById('amount').value = '';
+    document.getElementById('payCash').checked = true;
+    document.getElementById('bankSelect').value = '';
+    toggleBank();
+    document.getElementById('voucherActions').classList.add('d-none');
+    document.getElementById('saveLabel').textContent = 'حفظ السند';
+}
+
+function deleteVoucher() {
+    if (!currentVoucherId) return;
+    if (!confirm('حذف هذا السند؟')) return;
+    fetch(`${DELETE_PREFIX}${currentVoucherId}/delete/`, {
+        method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+    }).then(r => r.json()).then(data => {
+        if (data.success) { alert(data.message); newVoucher(); }
+        else alert(data.error);
+    });
+}
+
+function saveVoucher() {
+    const expense_type_id = document.getElementById('expenseType').value;
+    const amount = document.getElementById('amount').value;
+    const payment_method = document.querySelector('input[name="payMethod"]:checked').value;
+    const bank_id = document.getElementById('bankSelect').value;
+    if (!expense_type_id) { alert('اختر المصروف'); return; }
+    if (!amount || parseFloat(amount) <= 0) { alert('أدخل المبلغ'); return; }
+    if (payment_method === 'bank' && !bank_id) { alert('اختر البنك'); return; }
+    const payload = { expense_type_id: parseInt(expense_type_id, 10), amount, payment_method };
+    if (payment_method === 'bank') payload.bank_id = parseInt(bank_id, 10);
+    if (currentVoucherId) payload.voucher_id = currentVoucherId;
+    fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            if (data.next_serial) {
+                document.querySelector('.card-header .badge').textContent = 'التالي: ' + data.next_serial;
+            }
+            newVoucher();
+        } else alert(data.error);
+    });
+}
+</script>
+{% endblock %}

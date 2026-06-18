@@ -1,0 +1,166 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}أصناف مستهلكة{% endblock %}
+{% block page_title %}أصناف مستهلكة{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:linear-gradient(135deg,#f39c12,#e67e22);">
+                <h5 class="mb-0"><i class="fas fa-minus-circle me-2"></i> صرف / استهلاك أصناف</h5>
+                <span class="badge bg-light text-dark">التالي: {{ next_serial }}</span>
+            </div>
+            <div class="card-body">
+                <input type="text" id="consumptionSerial" class="form-control mb-2" placeholder="مسلسل الحركة — Enter للتحميل" inputmode="numeric">
+
+                <div id="consumptionActions" class="d-none d-flex gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-danger flex-fill" onclick="deleteConsumption()">حذف الحركة</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" onclick="newConsumption()">حركة جديدة</button>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-md-8">
+                        <label class="form-label fw-bold small">الصنف</label>
+                        <select id="productSelect" class="form-select">
+                            <option value="">-- اختر الصنف --</option>
+                            {% for p in products %}
+                            <option value="{{ p.id }}" data-name="{{ p.name }}" data-code="{{ p.code }}" data-stock="{{ p.stock }}">
+                                {% if p.code %}{{ p.code }} — {% endif %}{{ p.name }} (متوفر: {{ p.stock }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">الكمية</label>
+                        <input type="number" id="lineQty" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                        <button type="button" class="btn btn-warning w-100 text-white" onclick="addLine()">+</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-warning">
+                            <tr><th>الصنف</th><th>الكمية</th><th></th></tr>
+                        </thead>
+                        <tbody id="linesBody">
+                            <tr><td colspan="3" class="text-center text-muted py-3">لا أصناف بعد</td></tr>
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr><td class="text-end">إجمالي الكمية:</td><td id="sumQty">0</td><td></td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <button type="button" class="btn w-100 btn-lg text-white" style="background:linear-gradient(135deg,#f39c12,#e67e22);" onclick="saveConsumption()">
+                    <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ الحركة</span>
+                </button>
+                <a href="/inventory/" class="btn btn-outline-secondary w-100 mt-2">رجوع</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let lines = [];
+let currentConsumptionId = null;
+
+document.getElementById('consumptionSerial').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); loadConsumption(); }
+});
+
+function loadConsumption() {
+    const serial = document.getElementById('consumptionSerial').value.trim();
+    if (!serial) return;
+    fetch(`/inventory/consumption/lookup/?serial=${encodeURIComponent(serial)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.error || 'حركة غير موجودة'); return; }
+            const c = data.consumption;
+            currentConsumptionId = c.id;
+            lines = c.items.map(i => ({
+                product_id: i.product_id, name: i.name, code: i.code || '', quantity: i.quantity,
+            }));
+            renderLines();
+            document.getElementById('consumptionActions').classList.remove('d-none');
+            document.getElementById('saveLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newConsumption() {
+    currentConsumptionId = null;
+    lines = [];
+    document.getElementById('consumptionSerial').value = '';
+    document.getElementById('consumptionActions').classList.add('d-none');
+    document.getElementById('saveLabel').textContent = 'حفظ الحركة';
+    renderLines();
+}
+
+function deleteConsumption() {
+    if (!currentConsumptionId) return;
+    if (!confirm('حذف حركة الاستهلاك؟')) return;
+    fetch(`/inventory/consumption/${currentConsumptionId}/delete/`, {
+        method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+    }).then(r => r.json()).then(data => {
+        if (data.success) { alert(data.message); newConsumption(); }
+        else alert(data.error);
+    });
+}
+
+function addLine() {
+    const sel = document.getElementById('productSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt.value) { alert('اختر الصنف'); return; }
+    const qty = parseInt(document.getElementById('lineQty').value, 10) || 0;
+    const stock = parseInt(opt.dataset.stock, 10) || 0;
+    if (qty <= 0) { alert('أدخل كمية صحيحة'); return; }
+  const pid = parseInt(opt.value, 10);
+    const existing = lines.find(l => l.product_id === pid);
+    const totalQty = (existing ? existing.quantity : 0) + qty;
+    if (totalQty > stock && !currentConsumptionId) {
+        alert(`المخزون غير كافٍ (متاح: ${stock})`); return;
+    }
+    if (existing) existing.quantity += qty;
+    else lines.push({ product_id: pid, name: opt.dataset.name, code: opt.dataset.code || '', quantity: qty });
+    renderLines();
+}
+
+function removeLine(i) { lines.splice(i, 1); renderLines(); }
+
+function renderLines() {
+    const body = document.getElementById('linesBody');
+    if (!lines.length) {
+        body.innerHTML = '<tr><td colspan="3" class="text-center text-muted py-3">لا أصناف بعد</td></tr>';
+        document.getElementById('sumQty').textContent = '0';
+        return;
+    }
+    let sum = 0;
+    body.innerHTML = lines.map((l, i) => {
+        sum += l.quantity;
+        return `<tr><td class="fw-bold">${l.code ? l.code+' — ' : ''}${l.name}</td><td>${l.quantity}</td>
+            <td><button class="btn btn-sm btn-outline-danger" onclick="removeLine(${i})">×</button></td></tr>`;
+    }).join('');
+    document.getElementById('sumQty').textContent = sum;
+}
+
+function saveConsumption() {
+    if (!lines.length) { alert('أضف صنفاً'); return; }
+    const payload = { items: lines };
+    if (currentConsumptionId) payload.consumption_id = currentConsumptionId;
+    fetch('/inventory/consumption/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            if (data.next_serial) {
+                document.querySelector('.card-header .badge').textContent = 'التالي: ' + data.next_serial;
+            }
+            newConsumption();
+        } else alert(data.error);
+    });
+}
+</script>
+{% endblock %}

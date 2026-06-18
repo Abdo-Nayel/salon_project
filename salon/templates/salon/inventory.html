@@ -3,34 +3,33 @@
 {% block page_title %}المخزن{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h3 class="fw-bold">📦 المخزن</h3>
-    <div class="d-flex gap-2">
-        <a href="/inventory/movement/add/" class="btn btn-success"><i class="fas fa-plus me-2"></i> حركة مخزون</a>
-        <a href="/products/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> منتج جديد</a>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h3 class="fw-bold mb-0">📦 المخزن</h3>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/inventory/item/add/" class="btn btn-primary"><i class="fas fa-barcode me-1"></i> إضافة صنف</a>
+        <a href="/inventory/purchase/add/" class="btn btn-success"><i class="fas fa-cart-plus me-1"></i> مشتريات صنف</a>
+        <a href="/inventory/consumption/add/" class="btn btn-warning text-white"><i class="fas fa-minus-circle me-1"></i> أصناف مستهلكة</a>
+        <a href="/inventory/report/" class="btn btn-info text-white"><i class="fas fa-chart-bar me-1"></i> تقرير حركة المخزن</a>
+        <a href="/inventory/totals/" class="btn btn-outline-dark"><i class="fas fa-calculator me-1"></i> صافي إجماليات المخزون</a>
     </div>
 </div>
 
-<!-- Alerts -->
 {% if out_of_stock %}
-<div class="alert alert-danger">
-    <strong>⚠️ نفذ المخزون:</strong> {{ out_of_stock.count }} منتج
-</div>
+<div class="alert alert-danger py-2"><strong>نفذ المخزون:</strong> {{ out_of_stock.count }} صنف</div>
 {% endif %}
 {% if low_stock %}
-<div class="alert alert-warning">
-    <strong>⚠️ مخزون منخفض:</strong> {{ low_stock.count }} منتج
-</div>
+<div class="alert alert-warning py-2"><strong>مخزون منخفض:</strong> {{ low_stock.count }} صنف</div>
 {% endif %}
 
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0 align-middle">
                 <thead class="bg-light">
                     <tr>
-                        <th class="py-3 px-4">المنتج</th>
-                        <th class="py-3">السعر</th>
+                        <th class="py-3 px-4">كود</th>
+                        <th class="py-3">الصنف</th>
+                        <th class="py-3">سعر البيع</th>
                         <th class="py-3">التكلفة</th>
                         <th class="py-3">المخزون</th>
                         <th class="py-3">الحالة</th>
@@ -39,24 +38,23 @@
                 <tbody>
                     {% for p in products %}
                     <tr>
-                        <td class="px-4 fw-bold">{{ p.name }}</td>
+                        <td class="px-4 text-muted">{{ p.code|default:"—" }}</td>
+                        <td class="fw-bold">{{ p.name }}</td>
                         <td>{{ p.price }} ج</td>
                         <td>{{ p.cost }} ج</td>
                         <td>
-                            {% if p.category.is_service %}
-                                <span class="badge bg-secondary">خدمة</span>
-                            {% elif p.stock <= 0 %}
+                            {% if p.stock <= 0 %}
                                 <span class="badge bg-danger">نفذ</span>
                             {% elif p.stock <= p.min_stock %}
-                                <span class="badge bg-warning">{{ p.stock }}</span>
+                                <span class="badge bg-warning text-dark">{{ p.stock }}</span>
                             {% else %}
                                 <span class="badge bg-success">{{ p.stock }}</span>
                             {% endif %}
                         </td>
-                        <td>{% if p.is_active %}<span class="badge bg-success">✅</span>{% else %}<span class="badge bg-secondary">❌</span>{% endif %}</td>
+                        <td>{% if p.is_active %}<span class="badge bg-success">نشط</span>{% else %}<span class="badge bg-secondary">موقوف</span>{% endif %}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="text-center py-5 text-muted">لا توجد منتجات</td></tr>
+                    <tr><td colspan="6" class="text-center py-5 text-muted">لا أصناف — ابدأ بـ <a href="/inventory/item/add/">إضافة صنف</a></td></tr>
                     {% endfor %}
                 </tbody>
             </table>

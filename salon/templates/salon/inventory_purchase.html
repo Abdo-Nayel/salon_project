@@ -1,0 +1,197 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}مشتريات صنف - Salon Pro{% endblock %}
+{% block page_title %}مشتريات صنف{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-file-invoice me-2"></i> فاتورة مشتريات</h5>
+                <span class="badge bg-light text-success" id="nextSerialBadge">التالي: {{ next_serial }}</span>
+            </div>
+            <div class="card-body">
+                <input type="text" id="purchaseSerial" class="form-control mb-2" placeholder="ادخل مسلسل المشتريات — Enter للتحميل" inputmode="numeric">
+
+                <div id="purchaseActions" class="d-none d-flex gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-danger flex-fill" onclick="deletePurchase()">حذف الفاتورة</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" onclick="newPurchase()">فاتورة جديدة</button>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold small">اسم الصنف</label>
+                        <select id="productSelect" class="form-select">
+                            <option value="">-- اختر الصنف --</option>
+                            {% for p in products %}
+                            <option value="{{ p.id }}" data-name="{{ p.name }}" data-code="{{ p.code }}">
+                                {% if p.code %}{{ p.code }} — {% endif %}{{ p.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">تكلفة</label>
+                        <input type="number" id="lineCost" class="form-control" min="0" step="0.01">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">بيع</label>
+                        <input type="number" id="linePrice" class="form-control" min="0" step="0.01">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">كمية</label>
+                        <input type="number" id="lineQty" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                        <button type="button" class="btn btn-outline-primary w-100" onclick="addLine()">+</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>الصنف</th><th>تكلفة</th><th>بيع</th><th>كمية</th>
+                                <th>إجمالي تكلفة</th><th>إجمالي بيع</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="linesBody">
+                            <tr><td colspan="7" class="text-center text-muted py-3">لا أصناف بعد</td></tr>
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="4" class="text-end">الإجمالي:</td>
+                                <td id="sumCost">0</td><td id="sumPrice">0</td><td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <button type="button" class="btn btn-success w-100 btn-lg" id="btnSavePurchase" onclick="savePurchase()">
+                    <i class="fas fa-save me-1"></i> <span id="savePurchaseLabel">حفظ الفاتورة</span>
+                </button>
+                <a href="/inventory/" class="btn btn-outline-secondary w-100 mt-2">رجوع</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let lines = [];
+let currentPurchaseId = null;
+
+document.getElementById('purchaseSerial').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); loadPurchase(); }
+});
+
+function loadPurchase() {
+    const serial = document.getElementById('purchaseSerial').value.trim();
+    if (!serial) return;
+    fetch(`/inventory/purchase/lookup/?serial=${encodeURIComponent(serial)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { alert(data.error || 'فاتورة غير موجودة'); return; }
+            const p = data.purchase;
+            currentPurchaseId = p.id;
+            lines = p.items.map(i => ({
+                product_id: i.product_id, name: i.name, code: i.code || '',
+                cost: parseFloat(i.cost), price: parseFloat(i.price), quantity: i.quantity,
+            }));
+            renderLines();
+            document.getElementById('purchaseActions').classList.remove('d-none');
+            document.getElementById('savePurchaseLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newPurchase() {
+    currentPurchaseId = null;
+    lines = [];
+    document.getElementById('purchaseSerial').value = '';
+    document.getElementById('purchaseActions').classList.add('d-none');
+    document.getElementById('savePurchaseLabel').textContent = 'حفظ الفاتورة';
+    renderLines();
+}
+
+function deletePurchase() {
+    if (!currentPurchaseId) return;
+    if (!confirm('حذف فاتورة المشتريات؟')) return;
+    fetch(`/inventory/purchase/${currentPurchaseId}/delete/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) { alert(data.message); newPurchase(); }
+        else alert(data.error || 'فشل الحذف');
+    });
+}
+
+function addLine() {
+    const sel = document.getElementById('productSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt.value) { alert('اختر الصنف'); return; }
+    const cost = parseFloat(document.getElementById('lineCost').value) || 0;
+    const price = parseFloat(document.getElementById('linePrice').value) || 0;
+    const qty = parseInt(document.getElementById('lineQty').value, 10) || 0;
+    if (qty <= 0) { alert('أدخل كمية صحيحة'); return; }
+    const pid = parseInt(opt.value, 10);
+    const existing = lines.find(l => l.product_id === pid);
+    if (existing) {
+        existing.quantity += qty;
+        existing.cost = cost;
+        existing.price = price;
+    } else {
+        lines.push({ product_id: pid, name: opt.dataset.name, code: opt.dataset.code || '', cost, price, quantity: qty });
+    }
+    renderLines();
+}
+
+function removeLine(idx) { lines.splice(idx, 1); renderLines(); }
+
+function renderLines() {
+    const body = document.getElementById('linesBody');
+    if (!lines.length) {
+        body.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">لا أصناف بعد</td></tr>';
+        document.getElementById('sumCost').textContent = '0';
+        document.getElementById('sumPrice').textContent = '0';
+        return;
+    }
+    let sumC = 0, sumP = 0;
+    body.innerHTML = lines.map((l, i) => {
+        const lc = l.cost * l.quantity, lp = l.price * l.quantity;
+        sumC += lc; sumP += lp;
+        return `<tr>
+            <td class="fw-bold">${l.code ? l.code+' — ' : ''}${l.name}</td>
+            <td>${l.cost}</td><td>${l.price}</td><td>${l.quantity}</td>
+            <td>${lc.toFixed(2)}</td><td>${lp.toFixed(2)}</td>
+            <td><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeLine(${i})">×</button></td>
+        </tr>`;
+    }).join('');
+    document.getElementById('sumCost').textContent = sumC.toFixed(2) + ' ج';
+    document.getElementById('sumPrice').textContent = sumP.toFixed(2) + ' ج';
+}
+
+function savePurchase() {
+    if (!lines.length) { alert('أضف صنفاً واحداً على الأقل'); return; }
+    const payload = { items: lines };
+    if (currentPurchaseId) payload.purchase_id = currentPurchaseId;
+    fetch('/inventory/purchase/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            if (data.next_serial) {
+                document.getElementById('nextSerialBadge').textContent = 'التالي: ' + data.next_serial;
+            }
+            newPurchase();
+        } else {
+            alert(data.error || 'فشل الحفظ');
+        }
+    });
+}
+</script>
+{% endblock %}

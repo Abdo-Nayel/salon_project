@@ -1,0 +1,52 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}فاتورة مشتريات #{{ purchase.serial_number }}{% endblock %}
+{% block page_title %}فاتورة مشتريات #{{ purchase.serial_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <span class="text-muted">{{ purchase.created_at|date:"Y-m-d H:i" }}</span>
+    </div>
+    <a href="/inventory/report/" class="btn btn-outline-secondary">رجوع للتقرير</a>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th class="px-4">كود</th>
+                        <th>الصنف</th>
+                        <th>تكلفة الوحدة</th>
+                        <th>سعر البيع</th>
+                        <th>الكمية</th>
+                        <th>إجمالي تكلفة</th>
+                        <th>إجمالي بيع</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in purchase.items.all %}
+                    <tr>
+                        <td class="px-4">{{ item.product.code|default:"—" }}</td>
+                        <td class="fw-bold">{{ item.product.name }}</td>
+                        <td>{{ item.cost }} ج</td>
+                        <td>{{ item.price }} ج</td>
+                        <td>{{ item.quantity }}</td>
+                        <td class="text-danger fw-bold">{{ item.line_cost }} ج</td>
+                        <td class="text-success fw-bold">{{ item.line_price }} ج</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light fw-bold fs-5">
+                    <tr>
+                        <td colspan="5" class="text-end px-4">الإجمالي:</td>
+                        <td class="text-danger">{{ total_cost }} ج</td>
+                        <td class="text-success">{{ total_price }} ج</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

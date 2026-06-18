@@ -1,0 +1,151 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}تقرير المشتريات والاستهلاك{% endblock %}
+{% block page_title %}تقرير المشتريات والاستهلاك{% endblock %}
+
+{% block content %}
+<style>
+.inv-report-hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
+}
+.inv-section-in { border-right: 4px solid #28a745; }
+.inv-section-out { border-right: 4px solid #fd7e14; }
+.inv-section-net { border-right: 4px solid #667eea; }
+.inv-card { border: 0; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.06); overflow: hidden; margin-bottom: 1.5rem; }
+.inv-card .card-header { font-weight: 700; border: 0; }
+.inv-in-header { background: linear-gradient(90deg, #d4edda, #fff); color: #155724; }
+.inv-out-header { background: linear-gradient(90deg, #fff3cd, #fff); color: #856404; }
+.inv-net-header { background: linear-gradient(90deg, #e8eaf6, #fff); color: #3949ab; }
+</style>
+
+<div class="inv-report-hero d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h3 class="fw-bold mb-1">تقرير حركة المخزن</h3>
+        <small class="opacity-75">وارد (مشتريات) — صادر (مستهلك) — صافي</small>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/inventory/report/pdf/" target="_blank" class="btn btn-light btn-sm fw-bold">
+            <i class="fas fa-file-pdf text-danger me-1"></i> طباعة PDF
+        </a>
+        <a href="/inventory/" class="btn btn-outline-light btn-sm">رجوع</a>
+    </div>
+</div>
+
+<div class="card inv-card inv-section-in">
+    <div class="card-header inv-in-header py-3">
+        <i class="fas fa-arrow-down me-2"></i> الوارد — مشتريات ({{ incoming|length }})
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle table-sm">
+                <thead class="table-success table-light">
+                    <tr>
+                        <th class="px-3">مسلسل</th><th>تاريخ</th><th>كود</th><th>الصنف</th>
+                        <th>كمية</th><th>تكلفة</th><th>بيع</th>
+                        <th>إج. تكلفة</th><th>إج. بيع</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in incoming %}
+                    <tr>
+                        <td class="px-3 fw-bold text-success">#{{ row.serial }}</td>
+                        <td class="small text-muted">{{ row.date|date:"m-d H:i" }}</td>
+                        <td>{{ row.code|default:"—" }}</td>
+                        <td class="fw-bold">{{ row.name }}</td>
+                        <td><span class="badge bg-success">{{ row.qty }}</span></td>
+                        <td>{{ row.cost }}</td>
+                        <td>{{ row.price }}</td>
+                        <td class="text-danger fw-bold">{{ row.line_cost }}</td>
+                        <td class="text-primary fw-bold">{{ row.line_sale }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="9" class="text-center py-4 text-muted">لا مشتريات</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="7" class="text-end px-3">إجمالي الوارد:</td>
+                        <td class="text-danger">{{ grand_in_cost }} ج</td>
+                        <td class="text-primary">{{ grand_in_sale }} ج</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card inv-card inv-section-out">
+    <div class="card-header inv-out-header py-3">
+        <i class="fas fa-arrow-up me-2"></i> الصادر — أصناف مستهلكة ({{ outgoing|length }})
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle table-sm">
+                <thead class="table-warning table-light">
+                    <tr>
+                        <th class="px-3">مسلسل</th><th>تاريخ</th><th>كود</th><th>الصنف</th>
+                        <th>كمية</th><th>تكلفة وحدة</th><th>إج. تكلفة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in outgoing %}
+                    <tr>
+                        <td class="px-3 fw-bold text-warning">#{{ row.serial }}</td>
+                        <td class="small text-muted">{{ row.date|date:"m-d H:i" }}</td>
+                        <td>{{ row.code|default:"—" }}</td>
+                        <td class="fw-bold">{{ row.name }}</td>
+                        <td><span class="badge bg-warning text-dark">{{ row.qty }}</span></td>
+                        <td>{{ row.unit_cost }}</td>
+                        <td class="text-danger fw-bold">{{ row.line_cost }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center py-4 text-muted">لا استهلاك</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="4" class="text-end px-3">إجمالي الصادر:</td>
+                        <td>{{ grand_out_qty }}</td>
+                        <td></td>
+                        <td class="text-danger">{{ grand_out_cost }} ج</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card inv-card inv-section-net">
+    <div class="card-header inv-net-header py-3">
+        <i class="fas fa-balance-scale me-2"></i> الصافي
+    </div>
+    <div class="card-body">
+        <div class="row g-3 text-center">
+            <div class="col-md-3">
+                <div class="p-3 rounded bg-light">
+                    <div class="small text-muted">صافي الكمية (وارد − صادر)</div>
+                    <div class="fs-4 fw-bold text-primary">{{ net_qty }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-3 rounded bg-light">
+                    <div class="small text-muted">صافي التكلفة</div>
+                    <div class="fs-4 fw-bold text-danger">{{ net_cost }} ج</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-3 rounded bg-light">
+                    <div class="small text-muted">وارد بيع − صادر تكلفة</div>
+                    <div class="fs-4 fw-bold text-success">{{ net_sale }} ج</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="p-3 rounded" style="background:linear-gradient(135deg,#667eea22,#764ba222);">
+                    <div class="small text-muted">صافي قيمة البيع (وارد − تكلفة صادر)</div>
+                    <div class="fs-4 fw-bold" style="color:#667eea;">{{ net_sale }} ج</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -223,12 +223,24 @@
         <button class="print-btn" onclick="window.print()">
             <span>🖨️</span> طباعة الفاتورة
         </button>
-        <button class="print-btn close-btn" onclick="window.close()">
+        <button class="print-btn close-btn" onclick="closeReceipt()">
             <span>✕</span> إغلاق النافذة
         </button>
     </div>
 
     <script>
+        function closeReceipt() {
+            if (window.opener && !window.opener.closed) {
+                window.close();
+                return;
+            }
+            if (window.history.length > 1) {
+                window.history.back();
+                return;
+            }
+            window.location.href = '/bookings/';
+        }
+
         // إطلاق أمر الفوكس لسهولة الضغط على مفتاح Enter مباشرة للطباعة
         window.onload = function() {
             setTimeout(function() {

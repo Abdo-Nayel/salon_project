@@ -1,37 +1,70 @@
 {% extends "salon/simple_base.html" %}
-{% block title %}💸 المصروفات - Salon Pro{% endblock %}
+{% block title %}المصروفات - Salon Pro{% endblock %}
 {% block page_title %}المصروفات{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h3 class="fw-bold">💸 المصروفات</h3>
-    <a href="/expenses/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> جديد</a>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h3 class="fw-bold mb-0">المصروفات</h3>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/expenses/type/add/" class="btn btn-primary"><i class="fas fa-tags me-1"></i> تكويد مصروف</a>
+        <a href="/expenses/out/add/" class="btn btn-danger"><i class="fas fa-money-bill-wave me-1"></i> مصروف</a>
+        <a href="/expenses/return/add/" class="btn btn-success"><i class="fas fa-undo me-1"></i> مرتد مصروف</a>
+    </div>
 </div>
 
-<div class="card">
+<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
+    <div class="card-header py-3 fw-bold" style="background:linear-gradient(90deg,#fee2e2,#fff);">
+        <i class="fas fa-list me-2 text-danger"></i> آخر الحركات
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="bg-light">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
                     <tr>
-                        <th class="py-3 px-4">التصنيف</th>
+                        <th class="px-4 py-3">مسلسل</th>
+                        <th class="py-3">النوع</th>
+                        <th class="py-3">المصروف</th>
                         <th class="py-3">المبلغ</th>
-                        <th class="py-3">الوصف</th>
+                        <th class="py-3">الدفع</th>
+                        <th class="py-3">البنك</th>
                         <th class="py-3">التاريخ</th>
                         <th class="py-3">بواسطة</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for e in expenses %}
+                    {% for v in vouchers %}
                     <tr>
-                        <td class="px-4"><span class="badge bg-danger">{{ e.category }}</span></td>
-                        <td class="fw-bold text-danger">{{ e.amount }} ج</td>
-                        <td>{{ e.description|truncatechars:50 }}</td>
-                        <td>{{ e.date|date:"Y-m-d" }}</td>
-                        <td>{{ e.created_by|default:"-" }}</td>
+                        <td class="px-4 fw-bold">#{{ v.serial_number }}</td>
+                        <td>
+                            {% if v.voucher_type == 'return' %}
+                                <span class="badge bg-success">مرتد</span>
+                            {% else %}
+                                <span class="badge bg-danger">مصروف</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-bold">
+                            {% if v.expense_type.code %}{{ v.expense_type.code }} — {% endif %}{{ v.expense_type.name }}
+                        </td>
+                        <td class="fw-bold {% if v.voucher_type == 'return' %}text-success{% else %}text-danger{% endif %}">
+                            {% if v.voucher_type == 'return' %}+{% else %}-{% endif %}{{ v.amount }} ج
+                        </td>
+                        <td>
+                            {% if v.payment_method == 'bank' %}
+                                <span class="badge bg-info text-dark">بنك</span>
+                            {% else %}
+                                <span class="badge bg-secondary">كاش</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ v.bank.name|default:"—" }}</td>
+                        <td>{{ v.date|date:"Y-m-d" }}</td>
+                        <td class="text-muted small">{{ v.created_by|default:"—" }}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="text-center py-5 text-muted"><i class="fas fa-receipt fa-3x mb-3"></i><p>لا توجد مصروفات</p></td></tr>
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            لا حركات — ابدأ بـ <a href="/expenses/type/add/">تكويد مصروف</a>
+                        </td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>

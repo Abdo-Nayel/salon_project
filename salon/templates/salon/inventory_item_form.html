@@ -1,0 +1,129 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}إضافة صنف - Salon Pro{% endblock %}
+{% block page_title %}إضافة صنف{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between">
+                <h5 class="mb-0"><i class="fas fa-barcode me-2"></i> تكويد صنف</h5>
+                <small>التالي: {{ next_code }}</small>
+            </div>
+            <div class="card-body p-4">
+                <input type="text" id="itemCode" class="form-control mb-2" placeholder="كود الصنف — Enter للتحميل" value="{{ next_code }}" inputmode="numeric">
+                <input type="text" id="itemName" class="form-control mb-3" placeholder="اسم الصنف *">
+
+                <div id="itemInfo" class="alert alert-info py-2 small d-none mb-2"></div>
+
+                <div id="itemActions" class="d-none d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-danger flex-fill" id="btnDeleteItem" onclick="deleteItem()">حذف</button>
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="newItem()">جديد</button>
+                </div>
+
+                <button type="button" class="btn btn-primary w-100 btn-lg" id="btnSaveItem" onclick="saveItem()">
+                    <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ الصنف</span>
+                </button>
+                <a href="/inventory/" class="btn btn-outline-secondary w-100 mt-2">رجوع</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentProductId = null;
+let canDeleteItem = false;
+
+document.getElementById('itemCode').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); loadItem(); }
+});
+
+function loadItem() {
+    const code = document.getElementById('itemCode').value.trim();
+    if (!code) return;
+    fetch(`/inventory/item/lookup/?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'صنف غير موجود');
+                currentProductId = null;
+                canDeleteItem = false;
+                document.getElementById('itemInfo').classList.add('d-none');
+                document.getElementById('itemActions').classList.add('d-none');
+                document.getElementById('saveLabel').textContent = 'حفظ الصنف';
+                return;
+            }
+            const p = data.product;
+            currentProductId = p.id;
+            canDeleteItem = p.can_delete;
+            document.getElementById('itemName').value = p.name;
+            const info = document.getElementById('itemInfo');
+            info.textContent = p.can_delete
+                ? 'صنف محمّل — يمكن التعديل أو الحذف'
+                : `صنف محمّل — تعديل الاسم فقط (${p.delete_message})`;
+            info.classList.remove('d-none');
+            document.getElementById('itemActions').classList.remove('d-none');
+            document.getElementById('btnDeleteItem').style.display = p.can_delete ? 'block' : 'none';
+            document.getElementById('saveLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newItem() {
+    currentProductId = null;
+    canDeleteItem = false;
+    document.getElementById('itemCode').value = '{{ next_code }}';
+    document.getElementById('itemName').value = '';
+    document.getElementById('itemInfo').classList.add('d-none');
+    document.getElementById('itemActions').classList.add('d-none');
+    document.getElementById('saveLabel').textContent = 'حفظ الصنف';
+}
+
+function saveItem() {
+    const name = document.getElementById('itemName').value.trim();
+    if (!name) { alert('اسم الصنف مطلوب'); return; }
+    const payload = {
+        action: 'save',
+        name: name,
+        code: document.getElementById('itemCode').value.trim(),
+    };
+    if (currentProductId) payload.product_id = currentProductId;
+
+    fetch('/inventory/item/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            if (data.next_code) document.getElementById('itemCode').value = data.next_code;
+            newItem();
+            document.getElementById('itemCode').value = data.next_code || '{{ next_code }}';
+        } else {
+            alert(data.error || 'فشل الحفظ');
+        }
+    });
+}
+
+function deleteItem() {
+    if (!currentProductId || !canDeleteItem) return;
+    if (!confirm('حذف هذا الصنف؟')) return;
+    fetch('/inventory/item/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ action: 'delete', product_id: currentProductId }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            document.getElementById('itemCode').value = data.next_code || '1';
+            newItem();
+        } else {
+            alert(data.error || 'فشل الحذف');
+        }
+    });
+}
+</script>
+{% endblock %}

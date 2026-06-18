@@ -10,10 +10,7 @@ SECRET_KEY = 'your-secret-key-here-change-in-production'
 
 DEBUG = True
 
-ALLOWED_HOSTS = [
-    "ahmedatefsalon.erpbylyomastech.com",
-    "www.ahmedatefsalon.erpbylyomastech.com"
-]
+ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',

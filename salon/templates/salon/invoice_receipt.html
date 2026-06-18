@@ -157,7 +157,7 @@
 
         <div class="info-row">
             <span class="label">رقم الفاتورة:</span>
-            <span class="value">{{ invoice.invoice_number }}</span>
+            <span class="value">{{ invoice.display_number }}</span>
         </div>
         <div class="info-row">
             <span class="label">التاريخ:</span>
@@ -219,7 +219,7 @@
         <hr class="divider">
 
         <div class="barcode-area">
-            *{{ invoice.invoice_number }}*
+            *{{ invoice.display_number }}*
         </div>
 
         <div class="footer-text">
@@ -233,12 +233,24 @@
         <button class="print-btn" onclick="window.print()">
             <span>🖨️</span> طباعة الفاتورة
         </button>
-        <button class="print-btn close-btn" onclick="window.close()">
+        <button class="print-btn close-btn" onclick="closeReceipt()">
             <span>✕</span> إغلاق
         </button>
     </div>
 
     <script>
+        function closeReceipt() {
+            if (window.opener && !window.opener.closed) {
+                window.close();
+                return;
+            }
+            if (window.history.length > 1) {
+                window.history.back();
+                return;
+            }
+            window.location.href = '/pos/';
+        }
+
         window.onload = function() {
             setTimeout(function() {
                 document.querySelector('.print-btn').focus();

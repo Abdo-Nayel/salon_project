@@ -129,6 +129,21 @@ class Service(models.Model):
     def __str__(self):
         return f"{self.name} - {self.price} EGP"
 
+    @classmethod
+    def next_code(cls):
+        nums = []
+        for code in cls.objects.values_list('code', flat=True):
+            if str(code).isdigit():
+                nums.append(int(code))
+        return str(max(nums) + 1) if nums else '1'
+
+    def can_delete_catalog(self):
+        if self.invoice_items.exists():
+            return False, 'لا يمكن الحذف — الخدمة مربوطة بمبيعات'
+        if self.booking_set.exists():
+            return False, 'لا يمكن الحذف — الخدمة مربوطة بحجوزات'
+        return True, ''
+
 
 # =============================================================================
 # PRODUCTS
@@ -164,6 +179,184 @@ class Product(models.Model):
     @property
     def is_low_stock(self):
         return self.stock <= self.min_stock
+
+    @classmethod
+    def next_code(cls, branch):
+        nums = []
+        for code in cls.objects.filter(branch=branch).values_list('code', flat=True):
+            if str(code).isdigit():
+                nums.append(int(code))
+        return str(max(nums) + 1) if nums else '1'
+
+    def can_delete_catalog(self):
+        if self.stock > 0:
+            return False, 'لا يمكن الحذف — الصنف له كمية في المخزون'
+        if self.purchase_items.exists():
+            return False, 'لا يمكن الحذف — الصنف مربوط بفواتير مشتريات'
+        if self.invoice_items.exists():
+            return False, 'لا يمكن الحذف — الصنف مربوط بمبيعات'
+        if self.movements.exists():
+            return False, 'لا يمكن الحذف — الصنف له حركات مخزون'
+        return True, ''
+
+
+# =============================================================================
+# PURCHASE INVOICES (مشتريات المخزن)
+# =============================================================================
+
+class PurchaseInvoice(models.Model):
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name='purchase_invoices',
+        verbose_name="Branch",
+    )
+    serial_number = models.PositiveIntegerField(default=0, verbose_name="المسلسل")
+    notes = models.TextField(blank=True, verbose_name="Notes")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='purchase_invoices', verbose_name="Created By",
+    )
+
+    class Meta:
+        verbose_name = "Purchase Invoice"
+        verbose_name_plural = "Purchase Invoices"
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'serial_number'],
+                name='unique_branch_purchase_serial',
+            ),
+        ]
+
+    def __str__(self):
+        return f"مشتريات #{self.serial_number}"
+
+    @classmethod
+    def next_serial(cls, branch):
+        from django.db.models import Max
+        last = cls.objects.filter(branch=branch).aggregate(m=Max('serial_number'))['m'] or 0
+        return last + 1
+
+    def save(self, *args, **kwargs):
+        if self.branch_id and not self.serial_number:
+            self.serial_number = PurchaseInvoice.next_serial(self.branch)
+        super().save(*args, **kwargs)
+
+    @property
+    def total_cost(self):
+        return sum(i.line_cost for i in self.items.all())
+
+    @property
+    def total_price(self):
+        return sum(i.line_price for i in self.items.all())
+
+    def reverse_stock(self):
+        """عكس تأثير الفاتورة على المخزون."""
+        for item in self.items.select_related('product'):
+            p = item.product
+            p.stock = max(0, int(p.stock) - int(item.quantity))
+            p.save(update_fields=['stock'])
+        StockMovement.objects.filter(reference_invoice=self).delete()
+        self.items.all().delete()
+
+
+class PurchaseInvoiceItem(models.Model):
+    purchase = models.ForeignKey(
+        PurchaseInvoice, on_delete=models.CASCADE, related_name='items',
+        verbose_name="Purchase",
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='purchase_items',
+        verbose_name="Product",
+    )
+    quantity = models.PositiveIntegerField(verbose_name="Qty")
+    cost = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Unit Cost")
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Unit Price")
+
+    class Meta:
+        verbose_name = "Purchase Item"
+        verbose_name_plural = "Purchase Items"
+
+    @property
+    def line_cost(self):
+        return self.quantity * self.cost
+
+    @property
+    def line_price(self):
+        return self.quantity * self.price
+
+
+# =============================================================================
+# CONSUMPTION INVOICES (أصناف مستهلكة)
+# =============================================================================
+
+class ConsumptionInvoice(models.Model):
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name='consumption_invoices',
+        verbose_name="Branch",
+    )
+    serial_number = models.PositiveIntegerField(default=0, verbose_name="المسلسل")
+    notes = models.TextField(blank=True, verbose_name="Notes")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='consumption_invoices', verbose_name="Created By",
+    )
+
+    class Meta:
+        verbose_name = "Consumption Invoice"
+        verbose_name_plural = "Consumption Invoices"
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'serial_number'],
+                name='unique_branch_consumption_serial',
+            ),
+        ]
+
+    def __str__(self):
+        return f"استهلاك #{self.serial_number}"
+
+    @classmethod
+    def next_serial(cls, branch):
+        from django.db.models import Max
+        last = cls.objects.filter(branch=branch).aggregate(m=Max('serial_number'))['m'] or 0
+        return last + 1
+
+    def save(self, *args, **kwargs):
+        if self.branch_id and not self.serial_number:
+            self.serial_number = ConsumptionInvoice.next_serial(self.branch)
+        super().save(*args, **kwargs)
+
+    def reverse_stock(self):
+        for item in self.items.select_related('product'):
+            item.product.stock += item.quantity
+            item.product.save(update_fields=['stock'])
+        StockMovement.objects.filter(reference_consumption=self).delete()
+        self.items.all().delete()
+
+
+class ConsumptionInvoiceItem(models.Model):
+    consumption = models.ForeignKey(
+        ConsumptionInvoice, on_delete=models.CASCADE, related_name='items',
+        verbose_name="Consumption",
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='consumption_items',
+        verbose_name="Product",
+    )
+    quantity = models.PositiveIntegerField(verbose_name="Qty")
+    unit_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0, verbose_name="Unit Cost",
+    )
+
+    class Meta:
+        verbose_name = "Consumption Item"
+        verbose_name_plural = "Consumption Items"
+
+    @property
+    def line_cost(self):
+        return self.quantity * self.unit_cost
 
 
 # =============================================================================
@@ -238,7 +431,17 @@ class Invoice(models.Model):
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='invoices', verbose_name="Barber"
     )
-    invoice_number = models.CharField(max_length=20, unique=True, verbose_name="Invoice #")
+    invoice_number = models.CharField(max_length=20, verbose_name="رقم الفاتورة")
+    serial_number = models.PositiveIntegerField(
+        default=0, verbose_name="المسلسل",
+    )
+    daily_number = models.PositiveIntegerField(
+        default=0, verbose_name="المسلسل اليومي",
+    )
+    document_date = models.DateField(
+        null=True, blank=True, verbose_name="تاريخ المستند",
+    )
+    is_voided = models.BooleanField(default=False, verbose_name="ملغاة")
 
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Subtotal")
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Discount")
@@ -253,6 +456,10 @@ class Invoice(models.Model):
         Bank, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='invoices', verbose_name="Bank"
     )
+    booking = models.ForeignKey(
+        'Booking', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='invoices', verbose_name="Booking",
+    )
 
     notes = models.TextField(blank=True, verbose_name="Notes")
     is_paid = models.BooleanField(default=True, verbose_name="Paid")
@@ -266,20 +473,48 @@ class Invoice(models.Model):
         verbose_name = "Invoice"
         verbose_name_plural = "Invoices"
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'serial_number'],
+                name='unique_branch_invoice_serial',
+            ),
+        ]
 
     def __str__(self):
-        return f"INV-{self.invoice_number} - {self.final_total} EGP"
+        return f"#{self.display_number()} - {self.final_total} EGP"
+
+    def display_number(self):
+        return self.serial_number or self.invoice_number
+
+    def can_edit_today(self):
+        if not self.created_at:
+            return False
+        return timezone.localtime(self.created_at).date() == timezone.localdate()
+
+    @classmethod
+    def next_serial(cls, branch):
+        from django.db.models import Max
+        last = cls.objects.filter(branch=branch, is_voided=False).aggregate(
+            m=Max('serial_number'),
+        )['m'] or 0
+        # المسلسل لا يُعاد — حتى الفواتير الملغاة تحتفظ برقمها والتالي يكمل
+        last_all = cls.objects.filter(branch=branch).aggregate(m=Max('serial_number'))['m'] or 0
+        return last_all + 1
 
     def save(self, *args, **kwargs):
+        if self.branch_id and not self.serial_number:
+            self.serial_number = Invoice.next_serial(self.branch)
         if not self.invoice_number:
-            self.invoice_number = self.generate_invoice_number()
+            self.invoice_number = str(self.serial_number)
+        self.daily_number = self.serial_number
+        if not self.document_date:
+            self.document_date = timezone.localdate()
         self.final_total = self.subtotal - self.discount + self.tax
         super().save(*args, **kwargs)
 
     def generate_invoice_number(self):
-        prefix = f"{self.branch.id}-{timezone.now().strftime('%Y%m%d')}"
-        count = Invoice.objects.filter(invoice_number__startswith=prefix).count()
-        return f"{prefix}-{count + 1:04d}"
+        """Legacy — لم يعد يُستخدم."""
+        return str(self.serial_number or '')
 
 
 class InvoiceItem(models.Model):
@@ -359,6 +594,13 @@ class Booking(models.Model):
         related_name='bookings', verbose_name="Barber"
     )
     queue_number = models.PositiveIntegerField(verbose_name="Queue #")
+    serial_number = models.PositiveIntegerField(
+        default=0, verbose_name="المسلسل",
+    )
+    daily_number = models.PositiveIntegerField(
+        default=0, verbose_name="رقم يومي",
+    )
+    is_vip = models.BooleanField(default=False, verbose_name="حجز VIP")
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='waiting',
         verbose_name="Status"
@@ -375,6 +617,20 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"#{self.queue_number} - {self.customer_name}"
+
+    def save(self, *args, **kwargs):
+        if not self.serial_number:
+            if self.queue_number:
+                self.serial_number = self.queue_number
+            elif self.branch_id:
+                from django.db.models import Max
+                last = Booking.objects.filter(branch=self.branch).aggregate(
+                    m=Max('serial_number'),
+                )['m'] or 0
+                self.serial_number = last + 1
+        if not self.daily_number:
+            self.daily_number = self.queue_number or self.serial_number
+        super().save(*args, **kwargs)
 
 
 # =============================================================================
@@ -410,6 +666,109 @@ class Expense(models.Model):
         return f"{self.category} - {self.amount} EGP"
 
 
+class ExpenseType(models.Model):
+    """تكويد أنواع المصروفات — كود + اسم."""
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name='expense_types',
+        verbose_name="Branch",
+    )
+    code = models.CharField(max_length=20, blank=True, verbose_name="Code")
+    name = models.CharField(max_length=100, verbose_name="اسم المصروف")
+    is_active = models.BooleanField(default=True, verbose_name="Active")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Expense Type"
+        verbose_name_plural = "Expense Types"
+        ordering = ['code', 'name']
+
+    def __str__(self):
+        return f"{self.code} — {self.name}" if self.code else self.name
+
+    @classmethod
+    def next_code(cls, branch):
+        nums = []
+        for code in cls.objects.filter(branch=branch).values_list('code', flat=True):
+            if str(code).isdigit():
+                nums.append(int(code))
+        return str(max(nums) + 1) if nums else '1'
+
+    def can_delete_catalog(self):
+        if self.vouchers.exists():
+            return False, 'لا يمكن الحذف — المصروف مربوط بحركات'
+        return True, ''
+
+
+class ExpenseVoucher(models.Model):
+    """سند مصروف أو مرتد مصروف."""
+    VOUCHER_TYPES = [
+        ('out', 'مصروف'),
+        ('return', 'مرتد'),
+    ]
+    PAYMENT_METHODS = [
+        ('cash', 'كاش'),
+        ('bank', 'بنك'),
+    ]
+
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name='expense_vouchers',
+        verbose_name="Branch",
+    )
+    voucher_type = models.CharField(
+        max_length=10, choices=VOUCHER_TYPES, default='out',
+        verbose_name="نوع السند",
+    )
+    serial_number = models.PositiveIntegerField(default=0, verbose_name="المسلسل")
+    expense_type = models.ForeignKey(
+        ExpenseType, on_delete=models.PROTECT, related_name='vouchers',
+        verbose_name="المصروف",
+    )
+    payment_method = models.CharField(
+        max_length=10, choices=PAYMENT_METHODS, default='cash',
+        verbose_name="طريقة الدفع",
+    )
+    bank = models.ForeignKey(
+        Bank, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='expense_vouchers', verbose_name="البنك",
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="المبلغ")
+    date = models.DateField(default=timezone.now, verbose_name="التاريخ")
+    notes = models.TextField(blank=True, verbose_name="ملاحظات")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='expense_vouchers', verbose_name="Created By",
+    )
+
+    class Meta:
+        verbose_name = "Expense Voucher"
+        verbose_name_plural = "Expense Vouchers"
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'voucher_type', 'serial_number'],
+                name='unique_branch_expense_voucher_serial',
+            ),
+        ]
+
+    def __str__(self):
+        label = 'مرتد' if self.voucher_type == 'return' else 'مصروف'
+        return f"{label} #{self.serial_number} — {self.expense_type} — {self.amount}"
+
+    @classmethod
+    def next_serial(cls, branch, voucher_type='out'):
+        from django.db.models import Max
+        last = cls.objects.filter(
+            branch=branch, voucher_type=voucher_type,
+        ).aggregate(m=Max('serial_number'))['m'] or 0
+        return last + 1
+
+    def save(self, *args, **kwargs):
+        if self.branch_id and not self.serial_number:
+            self.serial_number = ExpenseVoucher.next_serial(self.branch, self.voucher_type)
+        super().save(*args, **kwargs)
+
+
 # =============================================================================
 # STOCK MOVEMENTS
 # =============================================================================
@@ -440,6 +799,17 @@ class StockMovement(models.Model):
         User, on_delete=models.SET_NULL, null=True,
         related_name='stock_movements', verbose_name="Created By"
     )
+    serial_number = models.PositiveIntegerField(default=0, verbose_name="المسلسل")
+    daily_number = models.PositiveIntegerField(default=0, verbose_name="رقم يومي")
+    reference_invoice = models.ForeignKey(
+        PurchaseInvoice, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='movements', verbose_name="فاتورة مشتريات",
+        db_column='reference_invoice_id',
+    )
+    reference_consumption = models.ForeignKey(
+        'ConsumptionInvoice', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='movements', verbose_name="فاتورة استهلاك",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -451,9 +821,23 @@ class StockMovement(models.Model):
         return f"{self.product} - {self.get_movement_type_display()} {self.quantity}"
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        if self.reference_invoice_id and not self.serial_number:
+            self.serial_number = self.reference_invoice.serial_number
+        if self.reference_consumption_id and not self.serial_number:
+            self.serial_number = self.reference_consumption.serial_number
+        if not self.serial_number and self.branch_id:
+            from django.db.models import Max
+            last = StockMovement.objects.filter(branch=self.branch).aggregate(
+                m=Max('serial_number'),
+            )['m'] or 0
+            self.serial_number = last + 1
+        if not self.daily_number:
+            self.daily_number = self.serial_number or 1
         super().save(*args, **kwargs)
-        if self.movement_type == 'in':
-            self.product.stock += self.quantity
-        elif self.movement_type == 'out':
-            self.product.stock -= self.quantity
-        self.product.save()
+        if is_new:
+            if self.movement_type == 'in':
+                self.product.stock += self.quantity
+            elif self.movement_type == 'out':
+                self.product.stock -= self.quantity
+            self.product.save()

@@ -1,35 +1,45 @@
 {% extends "salon/simple_base.html" %}
-{% block title %}✂️ الخدمات - صالون برو{% endblock %}
+{% block title %}الخدمات - Salon Pro{% endblock %}
 {% block page_title %}الخدمات{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h3 class="fw-bold">✂️ الخدمات</h3>
-    <a href="/services/add/" class="btn btn-primary"><i class="fas fa-plus me-2"></i> خدمة جديدة</a>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h3 class="fw-bold mb-0">الخدمات</h3>
+    <a href="/services/add/" class="btn btn-primary"><i class="fas fa-plus me-1"></i> تكويد خدمة</a>
 </div>
 
-<div class="card">
+<div class="card border-0 shadow-sm" style="border-radius:14px; overflow:hidden;">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="bg-light">
+            <table class="table table-hover mb-0 align-middle">
+                <thead style="background:linear-gradient(90deg,#6c5ce722,#fff);">
                     <tr>
-                        <th class="py-3 px-4">الاسم</th>
+                        <th class="py-3 px-4">مسلسل</th>
+                        <th class="py-3">اسم الخدمة</th>
                         <th class="py-3">السعر</th>
-                        <th class="py-3">المدة</th>
                         <th class="py-3">الحالة</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for s in services %}
                     <tr>
-                        <td class="px-4 fw-bold">{{ s.name }}</td>
+                        <td class="px-4 text-muted fw-bold">{{ s.code|default:"—" }}</td>
+                        <td class="fw-bold">{{ s.name }}</td>
                         <td class="fw-bold text-primary">{{ s.price }} ج</td>
-                        <td>{{ s.duration }} دقيقة</td>
-                        <td>{% if s.is_active %}<span class="badge bg-success">✅ نشط</span>{% else %}<span class="badge bg-secondary">❌ معطل</span>{% endif %}</td>
+                        <td>
+                            {% if s.is_active %}
+                                <span class="badge bg-success rounded-pill px-3">نشط</span>
+                            {% else %}
+                                <span class="badge bg-secondary rounded-pill px-3">موقوف</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4" class="text-center py-5 text-muted"><i class="fas fa-cut fa-3x mb-3"></i><p>لا توجد خدمات</p></td></tr>
+                    <tr>
+                        <td colspan="4" class="text-center py-5 text-muted">
+                            لا خدمات — ابدأ بـ <a href="/services/add/">تكويد خدمة</a>
+                        </td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>

@@ -29,9 +29,12 @@
     <div class="col-lg-4">
         <div class="card sticky-top" style="top:20px;z-index:100;">
            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-         <h5 class="mb-0"><i class="fas fa-shopping-cart me-2"></i> الفاتورة</h5>
-        </div>
+                <h5 class="mb-0"><i class="fas fa-shopping-cart me-2"></i> الفاتورة <span id="invoiceBadge" class="badge bg-light text-primary ms-1 d-none"></span></h5>
+           </div>
             <div class="card-body">
+                <input type="text" id="serialInput" class="form-control mb-2" placeholder="ادخل المسلسل" inputmode="numeric">
+                <input type="text" id="vipBookingInput" class="form-control mb-2" placeholder="ادخل رقم الحجز VIP" inputmode="numeric">
+                <div id="vipBookingInfo" class="alert alert-warning py-2 px-3 small d-none mb-2"></div>
                 <div id="cartItems" style="max-height:300px;overflow-y:auto;">
                     <p class="text-muted text-center py-3">السلة فارغة</p>
                 </div>
@@ -68,8 +71,8 @@
                 <div class="mb-3">
                     <label class="form-label fw-bold">طريقة الدفع</label>
                     <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-outline-success flex-fill active" onclick="setPayment('cash')">💵 كاش</button>
-                        <button type="button" class="btn btn-outline-warning flex-fill" onclick="setPayment('bank')">🏦 بنك</button>
+                        <button type="button" class="btn btn-outline-success flex-fill active" onclick="setPayment('cash', this)">كاش</button>
+                        <button type="button" class="btn btn-outline-warning flex-fill" onclick="setPayment('bank', this)">بنك</button>
                     </div>
                     <input type="hidden" id="paymentMethod" value="cash">
                 </div>
@@ -90,14 +93,19 @@
                     <input type="number" id="discountAmount" class="form-control" placeholder="الخصم (جنية)" onchange="calculateTotal()">
                 </div>
 
-                <div class="mb-3 d-none" id="whatsappDiv">
-                    <button id="whatsappLink" class="btn btn-success w-100">
-                        <i class="fab fa-whatsapp me-2"></i> إرسال الفاتورة واتساب
-                    </button>
+                <div id="recallActions" class="mb-3 d-none">
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-danger flex-fill" id="btnVoid" onclick="voidInvoice()">
+                            <i class="fas fa-trash me-1"></i> حذف
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary flex-fill" onclick="clearRecall()">
+                            <i class="fas fa-file me-1"></i> جديد
+                        </button>
+                    </div>
                 </div>
 
-                <button class="btn btn-success w-100 btn-lg" onclick="submitInvoice()">
-                    <i class="fas fa-check me-2"></i> إتمام البيع
+                <button class="btn btn-success w-100 btn-lg" id="btnSubmit" onclick="submitInvoice()">
+                    <i class="fas fa-check me-2"></i> <span id="submitLabel">إتمام البيع</span>
                 </button>
 
                 <div id="printActionsContainer" class="mt-3" style="display:none;"></div>
@@ -110,6 +118,157 @@
 let cart = [];
 let paymentMethod = 'cash';
 let lastInvoiceData = null;
+let currentInvoiceId = null;
+let currentSerial = null;
+let currentBookingId = null;
+let canEditLoaded = true;
+
+function loadVIPBookingFromInput() {
+    const queue = document.getElementById('vipBookingInput').value.trim();
+    if (!queue) return;
+    if (!/^\d+$/.test(queue)) {
+        alert('أدخل رقم حجز صحيح');
+        return;
+    }
+    fetch(`/pos/booking/?queue=${encodeURIComponent(queue)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'حجز VIP غير موجود');
+                return;
+            }
+            applyBookingData(data.booking);
+        })
+        .catch(() => alert('خطأ في الاتصال'));
+}
+
+function applyBookingData(booking) {
+    currentBookingId = booking.id;
+    currentInvoiceId = null;
+    currentSerial = null;
+    canEditLoaded = true;
+
+    cart = booking.items.map(i => ({
+        id: i.id, name: i.name, price: parseFloat(i.price), qty: i.qty
+    }));
+    renderCart();
+
+    document.getElementById('customerName').value = booking.customer_name || '';
+    document.getElementById('customerPhone').value = booking.customer_phone || '';
+    document.getElementById('barber').value = booking.barber_id || '';
+    document.getElementById('vipBookingInput').value = booking.queue_number;
+
+    const info = document.getElementById('vipBookingInfo');
+    info.textContent = `حجز VIP #${booking.queue_number} — ${booking.customer_name}`;
+    info.classList.remove('d-none');
+
+    document.getElementById('invoiceBadge').classList.add('d-none');
+    document.getElementById('recallActions').classList.add('d-none');
+    document.getElementById('submitLabel').textContent = 'إتمام البيع';
+    document.getElementById('btnSubmit').disabled = false;
+    document.getElementById('btnSubmit').classList.remove('btn-primary', 'btn-secondary');
+    document.getElementById('btnSubmit').classList.add('btn-success');
+}
+
+function loadInvoiceFromInput() {
+    const serial = document.getElementById('serialInput').value.trim();
+    if (!serial) return;
+    if (!/^\d+$/.test(serial)) {
+        alert('أدخل رقم مسلسل صحيح');
+        return;
+    }
+    loadInvoiceBySerial(serial);
+}
+
+function loadInvoiceBySerial(serial) {
+    if (!serial) return;
+    fetch(`/pos/lookup/?serial=${encodeURIComponent(serial)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert('فاتورة غير موجودة');
+                return;
+            }
+            applyInvoiceData(data.invoice);
+        })
+        .catch(() => alert('خطأ في الاتصال'));
+}
+
+function updateRecallUI() {
+    const actions = document.getElementById('recallActions');
+    const btnVoid = document.getElementById('btnVoid');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const submitLabel = document.getElementById('submitLabel');
+
+    if (currentInvoiceId) {
+        actions.classList.remove('d-none');
+        btnVoid.classList.toggle('d-none', !canEditLoaded);
+        btnSubmit.disabled = !canEditLoaded;
+        btnSubmit.classList.remove('btn-success', 'btn-secondary');
+        btnSubmit.classList.add(canEditLoaded ? 'btn-primary' : 'btn-secondary');
+        submitLabel.textContent = canEditLoaded ? 'حفظ التعديلات' : 'غير قابلة للتعديل';
+    } else {
+        actions.classList.add('d-none');
+        btnVoid.classList.remove('d-none');
+        btnSubmit.disabled = false;
+        btnSubmit.classList.remove('btn-primary', 'btn-secondary');
+        btnSubmit.classList.add('btn-success');
+        submitLabel.textContent = 'إتمام البيع';
+    }
+}
+
+function applyInvoiceData(inv) {
+    currentInvoiceId = inv.id;
+    currentSerial = inv.serial_number;
+    currentBookingId = null;
+    canEditLoaded = inv.can_edit;
+    document.getElementById('vipBookingInput').value = '';
+    document.getElementById('vipBookingInfo').classList.add('d-none');
+
+    cart = inv.items.map(i => ({
+        id: i.id, name: i.name, price: parseFloat(i.price), qty: i.qty
+    }));
+    renderCart();
+
+    document.getElementById('customerName').value = inv.customer_name || '';
+    document.getElementById('customerPhone').value = inv.customer_phone || '';
+    document.getElementById('barber').value = inv.barber_id || '';
+    document.getElementById('discountAmount').value = inv.discount || '';
+    setPayment(inv.payment_method || 'cash');
+    if (inv.payment_method === 'bank' && inv.bank_id) {
+        document.getElementById('bankSelect').value = inv.bank_id;
+    }
+
+    document.getElementById('serialInput').value = inv.serial_number;
+
+    const badge = document.getElementById('invoiceBadge');
+    badge.textContent = '#' + inv.serial_number;
+    badge.classList.remove('d-none');
+
+    updateRecallUI();
+}
+
+function clearRecall() {
+    newSale();
+}
+
+function voidInvoice() {
+    if (!currentInvoiceId || !canEditLoaded) return;
+    if (!confirm('إلغاء الفاتورة #' + currentSerial + '؟')) return;
+    fetch(`/pos/void/${currentInvoiceId}/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            clearRecall();
+        } else {
+            alert(data.error || 'فشل الإلغاء');
+        }
+    });
+}
 
 function addToCart(id, name, price) {
     const existing = cart.find(item => item.id === id);
@@ -168,22 +327,22 @@ function calculateTotal() {
     document.getElementById('total').textContent = total + ' ج';
 }
 
-function setPayment(method) {
+function setPayment(method, btn) {
     paymentMethod = method;
     document.getElementById('paymentMethod').value = method;
-    
-    document.querySelectorAll('.btn-outline-success, .btn-outline-warning').forEach(btn => {
-        btn.classList.remove('active');
+    document.querySelectorAll('.btn-outline-success, .btn-outline-warning').forEach(b => {
+        b.classList.remove('active');
     });
-    event.target.classList.add('active');
-
     const bankDiv = document.getElementById('bankDiv');
     if (method === 'bank') {
-        document.getElementById('bankSelect').value = "";
         bankDiv.classList.remove('d-none');
     } else {
         bankDiv.classList.add('d-none');
     }
+    if (!btn) {
+        btn = document.querySelector(method === 'bank' ? '.btn-outline-warning' : '.btn-outline-success');
+    }
+    if (btn) btn.classList.add('active');
 }
 
 function submitInvoice() {
@@ -213,6 +372,12 @@ function submitInvoice() {
         bank: document.getElementById('bankSelect').value,
         discount: discountAmountElement.value,
     };
+    if (currentInvoiceId && canEditLoaded) {
+        data.invoice_id = currentInvoiceId;
+    }
+    if (currentBookingId) {
+        data.booking_id = currentBookingId;
+    }
 
     fetch('/pos/', {
         method: 'POST',
@@ -222,20 +387,19 @@ function submitInvoice() {
         },
         body: JSON.stringify(data)
     })
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) {
+            throw new Error('HTTP ' + r.status);
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) {
             lastInvoiceData = data;
             const phone = customerPhoneElement.value;
 
+            resetAfterSave();
             showPrintActions(data.invoice_id, data.invoice_number, phone);
-
-            cart = [];
-            renderCart();
-            customerNameElement.value = '';
-            customerPhoneElement.value = '';
-            discountAmountElement.value = '';
-            document.getElementById('whatsappDiv').classList.add('d-none');
         } else {
             alert('❌ فشل إتمام البيع: ' + (data.error || 'خطأ غير معروف'));
         }
@@ -246,14 +410,28 @@ function submitInvoice() {
     });
 }
 
-// دالة إرسال خلفية حقيقية وصامتة عبر سيرفر الـ Django بتاعك بدون فتح نوافذ
+function sendInvoiceWhatsApp(btn, invoiceId, invoiceNumber) {
+    const input = document.getElementById('waPhoneInput');
+    let phone = input ? input.value.trim() : '';
+    if (!phone) {
+        phone = (document.getElementById('customerPhone').value || '').trim();
+    }
+    if (!phone) {
+        alert('ادخل رقم واتساب العميل');
+        if (input) input.focus();
+        return;
+    }
+    if (input) input.value = phone;
+    sendSilentWhatsApp(btn, phone, invoiceNumber, invoiceId);
+}
+
+// إرسال الفاتورة واتساب عبر السيرفر
 function sendSilentWhatsApp(btn, phone, invoiceNumber, invoiceId) {
     if (!phone || phone.trim() === '') return;
 
-    // تغيير شكل الزرار مؤقتاً لتوضيح جاري الإرسال
     const originalText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> جاري الإرسال تلقائياً...`;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> جاري الإرسال...`;
 
     fetch('/pos/send-whatsapp/', {
         method: 'POST',
@@ -291,33 +469,25 @@ function showPrintActions(invoiceId, invoiceNumber, phone) {
     if (!container) return;
 
     container.style.display = 'block';
-
-    let whatsappButtonHtml = '';
-    if (phone && phone.trim() !== '') {
-        whatsappButtonHtml = `
-            <button type="button" class="print-btn-whatsapp" onclick="sendSilentWhatsApp(this, '${phone}', '${invoiceNumber}', '${invoiceId}')">
-                <i class="fab fa-whatsapp"></i>
-                <span>إرسال الفاتورة من رقم الصالون الثابت</span>
-            </button>
-        `;
-    }
+    const safePhone = (phone || '').replace(/"/g, '&quot;');
 
     container.innerHTML = `
         <div class="print-actions-card">
             <div class="print-actions-header">
                 <i class="fas fa-check-circle"></i>
-                <span>تم إتمام البيع بنجاح!</span>
+                <span>تم البيع — فاتورة <strong>#${invoiceNumber}</strong></span>
             </div>
             <div class="print-actions-body">
-                <a href="/invoice/${invoiceId}/receipt/" target="_blank" class="print-btn-main" onclick="setTimeout(newSale, 500); return true;">
+                <a href="/invoice/${invoiceId}/receipt/" target="_blank" class="print-btn-main">
                     <i class="fas fa-print"></i>
                     <span>طباعة الفاتورة</span>
                 </a>
-                <button class="print-btn-direct" onclick="directPrint(${invoiceId})">
-                    <i class="fas fa-bolt"></i>
-                    <span>طباعة سريعة (POS)</span>
+                <input type="text" id="waPhoneInput" class="form-control" placeholder="رقم واتساب العميل" value="${safePhone}">
+                <button type="button" class="print-btn-whatsapp"
+                    onclick="sendInvoiceWhatsApp(this, ${invoiceId}, '${invoiceNumber}')">
+                    <i class="fab fa-whatsapp"></i>
+                    <span>إرسال واتساب</span>
                 </button>
-                ${whatsappButtonHtml}
                 <button class="print-btn-new" onclick="newSale()">
                     <i class="fas fa-plus"></i>
                     <span>فاتورة جديدة</span>
@@ -329,13 +499,26 @@ function showPrintActions(invoiceId, invoiceNumber, phone) {
     container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function newSale() {
+function resetAfterSave() {
     cart = [];
+    currentInvoiceId = null;
+    currentSerial = null;
+    currentBookingId = null;
+    canEditLoaded = true;
     renderCart();
     document.getElementById('customerName').value = '';
     document.getElementById('customerPhone').value = '';
     document.getElementById('discountAmount').value = '';
-    document.getElementById('whatsappDiv').classList.add('d-none');
+    document.getElementById('serialInput').value = '';
+    document.getElementById('vipBookingInput').value = '';
+    document.getElementById('vipBookingInfo').classList.add('d-none');
+    document.getElementById('barber').value = '';
+    document.getElementById('invoiceBadge').classList.add('d-none');
+    updateRecallUI();
+}
+
+function newSale() {
+    resetAfterSave();
     const container = document.getElementById('printActionsContainer');
     if (container) {
         container.innerHTML = '';
@@ -343,35 +526,19 @@ function newSale() {
     }
 }
 
-function directPrint(invoiceId) {
-    fetch(`/invoice/${invoiceId}/print-direct/`, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': '{{ csrf_token }}',
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(r => {
-        if (!r.ok) {
-            window.open(`/invoice/${invoiceId}/receipt/`, '_blank');
-            return null;
-        }
-        return r.json();
-    })
-    .then(data => {
-        if (data) {
-            if (data.success) {
-                alert('🖨️ ' + data.message);
-            } else {
-                window.open(`/invoice/${invoiceId}/receipt/`, '_blank');
-            }
-        }
-    })
-    .catch(err => {
-        console.log('Direct print failed, using browser print:', err);
-        window.open(`/invoice/${invoiceId}/receipt/`, '_blank');
-    });
-}
+document.getElementById('serialInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        loadInvoiceFromInput();
+    }
+});
+
+document.getElementById('vipBookingInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        loadVIPBookingFromInput();
+    }
+});
 </script>
 
 <style>
@@ -435,28 +602,6 @@ function directPrint(invoiceId) {
     transform: translateY(-3px);
     box-shadow: 0 10px 30px rgba(108, 92, 231, 0.4);
     color: white;
-}
-
-.print-btn-direct {
-    background: linear-gradient(135deg, #fdcb6e 0%, #fd79a8 100%);
-    color: white;
-    border: none;
-    padding: 14px 24px;
-    border-radius: 14px;
-    font-weight: 700;
-    font-size: 0.95rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    transition: all 0.3s;
-    box-shadow: 0 4px 15px rgba(253, 203, 110, 0.3);
-    cursor: pointer;
-}
-
-.print-btn-direct:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(253, 203, 110, 0.4);
 }
 
 .print-btn-whatsapp {

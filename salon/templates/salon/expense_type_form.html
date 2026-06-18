@@ -1,0 +1,114 @@
+{% extends "salon/simple_base.html" %}
+{% block title %}تكويد مصروف{% endblock %}
+{% block page_title %}تكويد مصروف{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header text-white d-flex justify-content-between" style="background:linear-gradient(135deg,#667eea,#764ba2);">
+                <h5 class="mb-0"><i class="fas fa-tags me-2"></i> تكويد مصروف</h5>
+                <small>التالي: {{ next_code }}</small>
+            </div>
+            <div class="card-body p-4">
+                <input type="text" id="expenseCode" class="form-control mb-2" placeholder="كود المصروف — Enter للتحميل" value="{{ next_code }}" inputmode="numeric">
+                <input type="text" id="expenseName" class="form-control mb-3" placeholder="اسم المصروف *">
+
+                <div id="typeInfo" class="alert alert-info py-2 small d-none mb-2"></div>
+
+                <div id="typeActions" class="d-none d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-danger flex-fill" id="btnDeleteType" onclick="deleteType()">حذف</button>
+                    <button type="button" class="btn btn-outline-secondary flex-fill" onclick="newType()">جديد</button>
+                </div>
+
+                <button type="button" class="btn w-100 btn-lg text-white" style="background:linear-gradient(135deg,#667eea,#764ba2);" onclick="saveType()">
+                    <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ المصروف</span>
+                </button>
+                <a href="/expenses/" class="btn btn-outline-secondary w-100 mt-2">رجوع</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentTypeId = null;
+let canDeleteType = false;
+
+document.getElementById('expenseCode').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); loadType(); }
+});
+
+function loadType() {
+    const code = document.getElementById('expenseCode').value.trim();
+    if (!code) return;
+    fetch(`/expenses/type/lookup/?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                alert(data.error || 'مصروف غير موجود');
+                currentTypeId = null;
+                document.getElementById('typeInfo').classList.add('d-none');
+                document.getElementById('typeActions').classList.add('d-none');
+                document.getElementById('saveLabel').textContent = 'حفظ المصروف';
+                return;
+            }
+            const t = data.expense_type;
+            currentTypeId = t.id;
+            canDeleteType = t.can_delete;
+            document.getElementById('expenseName').value = t.name;
+            const info = document.getElementById('typeInfo');
+            info.textContent = t.can_delete
+                ? 'مصروف محمّل — يمكن التعديل أو الحذف'
+                : `مصروف محمّل — تعديل الاسم فقط (${t.delete_message})`;
+            info.classList.remove('d-none');
+            document.getElementById('typeActions').classList.remove('d-none');
+            document.getElementById('btnDeleteType').style.display = t.can_delete ? 'block' : 'none';
+            document.getElementById('saveLabel').textContent = 'حفظ التعديلات';
+        });
+}
+
+function newType() {
+    currentTypeId = null;
+    document.getElementById('expenseCode').value = '{{ next_code }}';
+    document.getElementById('expenseName').value = '';
+    document.getElementById('typeInfo').classList.add('d-none');
+    document.getElementById('typeActions').classList.add('d-none');
+    document.getElementById('saveLabel').textContent = 'حفظ المصروف';
+}
+
+function saveType() {
+    const name = document.getElementById('expenseName').value.trim();
+    if (!name) { alert('اسم المصروف مطلوب'); return; }
+    const payload = { action: 'save', name, code: document.getElementById('expenseCode').value.trim() };
+    if (currentTypeId) payload.type_id = currentTypeId;
+    fetch('/expenses/type/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            document.getElementById('expenseCode').value = data.next_code || '{{ next_code }}';
+            newType();
+            document.getElementById('expenseCode').value = data.next_code || '{{ next_code }}';
+        } else alert(data.error);
+    });
+}
+
+function deleteType() {
+    if (!currentTypeId || !canDeleteType) return;
+    if (!confirm('حذف هذا المصروف؟')) return;
+    fetch('/expenses/type/add/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: JSON.stringify({ action: 'delete', type_id: currentTypeId }),
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            alert(data.message);
+            document.getElementById('expenseCode').value = data.next_code || '1';
+            newType();
+        } else alert(data.error);
+    });
+}
+</script>
+{% endblock %}

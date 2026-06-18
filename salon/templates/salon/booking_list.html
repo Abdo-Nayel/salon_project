@@ -12,8 +12,8 @@
         <button onclick="printQueueNumber()" class="btn btn-info text-white fw-semibold">
             <i class="fas fa-ticket-alt me-1"></i> طباعة رقم دور
         </button>
-        <a href="/bookings/add/" class="btn btn-primary fw-semibold">
-            <i class="fas fa-plus me-1"></i> حجز جديد
+        <a href="/bookings/add/" class="btn btn-warning fw-semibold text-dark">
+            <i class="fas fa-star me-1"></i> حجز VIP
         </a>
     </div>
 </div>
@@ -37,7 +37,10 @@
                 <tbody>
                     {% for booking in bookings %}
                     <tr>
-                        <td class="px-4 fw-bold text-primary text-center fs-5">{{ booking.queue_number }}</td>
+                        <td class="px-4 fw-bold text-primary text-center fs-5">
+                            {{ booking.queue_number }}
+                            {% if booking.is_vip %}<span class="badge bg-warning text-dark ms-1">VIP</span>{% endif %}
+                        </td>
                         <td class="fw-semibold">{{ booking.customer_name }}</td>
                         <td class="text-secondary">{{ booking.customer_phone|default:"-" }}</td>
                         <td>

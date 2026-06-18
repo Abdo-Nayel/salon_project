@@ -5,7 +5,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     Branch, User, Category, Service, Product, Bank, Customer,
-    Invoice, InvoiceItem, Booking, Expense, StockMovement
+    Invoice, InvoiceItem, Booking, Expense, StockMovement,
+    ExpenseType, ExpenseVoucher,
 )
 
 

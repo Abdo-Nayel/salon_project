@@ -33,7 +33,10 @@ import os
 
 from .models import (
     Branch, User, Service, Product, Bank, Customer,
-    Invoice, InvoiceItem, Booking, Expense, StockMovement , DailyQueueNumber
+    Invoice, InvoiceItem, Booking, Expense, StockMovement, DailyQueueNumber,
+    PurchaseInvoice, PurchaseInvoiceItem,
+    ConsumptionInvoice, ConsumptionInvoiceItem,
+    ExpenseType, ExpenseVoucher,
 )
 from .forms import (
     LoginForm, UserForm, ServiceForm, ProductForm,
@@ -59,6 +62,12 @@ def get_branch_queryset(request, model, order_by='-created_at'):
     # لو الموديل المطلوب هو الخدمة، رجع كل الخدمات لأنها غير مقسمة بفروع في قاعدة البيانات
     if model.__name__ == 'Service':
         return model.objects.all().order_by(order_by)
+
+    if model.__name__ == 'Invoice':
+        base = model.objects.filter(is_voided=False)
+        if branch:
+            return base.filter(branch=branch).order_by(order_by)
+        return base.order_by(order_by)
         
     if branch:
         # لباقي الموديلات اللي فيها فروع زي الفواتير والمبيعات
@@ -110,21 +119,23 @@ def dashboard(request):
 
     # Stats
     if branch:
-        invoices_today = Invoice.objects.filter(branch=branch, created_at__date=today)
-        expenses_today = Expense.objects.filter(branch=branch, date=today)
+        invoices_today = Invoice.objects.filter(branch=branch, created_at__date=today, is_voided=False)
+        expenses_today = ExpenseVoucher.objects.filter(branch=branch, date=today)
         waiting = Booking.objects.filter(branch=branch, status='waiting').count()
         low_stock = Product.objects.filter(branch=branch, stock__lte=F('min_stock')).count()
         # <-- هنا المشكلة: لازم يكون queue مش bookings
         queue = Booking.objects.filter(branch=branch, status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
     else:
-        invoices_today = Invoice.objects.filter(created_at__date=today)
-        expenses_today = Expense.objects.filter(date=today)
+        invoices_today = Invoice.objects.filter(created_at__date=today, is_voided=False)
+        expenses_today = ExpenseVoucher.objects.filter(date=today)
         waiting = Booking.objects.filter(status='waiting').count()
         low_stock = Product.objects.filter(stock__lte=F('min_stock')).count()
         queue = Booking.objects.filter(status__in=['waiting', 'in_progress']).order_by('queue_number')[:10]
 
     revenue = invoices_today.aggregate(total=Sum('final_total'))['total'] or 0
-    expenses = expenses_today.aggregate(total=Sum('amount'))['total'] or 0
+    exp_out = expenses_today.filter(voucher_type='out').aggregate(total=Sum('amount'))['total'] or 0
+    exp_ret = expenses_today.filter(voucher_type='return').aggregate(total=Sum('amount'))['total'] or 0
+    expenses = exp_out - exp_ret
 
     # Recent invoices
     recent = get_branch_queryset(request, Invoice)[:10]
@@ -145,6 +156,7 @@ def dashboard(request):
 # send_whatsapp_invoice
 # =============================================================================
 
+@login_required
 @csrf_protect
 def send_whatsapp_invoice(request):
     if request.method == "POST":
@@ -154,8 +166,16 @@ def send_whatsapp_invoice(request):
             invoice_number = data.get('invoice_number', '')
             invoice_id = data.get('invoice_id', '')
 
+            if not phone:
+                return JsonResponse({"success": False, "error": "ادخل رقم واتساب العميل"})
+
             api_key = getattr(settings, "WHATSAPP_API_KEY", None)
             api_url = getattr(settings, "WHATSAPP_API_URL", None)
+            if not api_key or not api_url:
+                return JsonResponse({
+                    "success": False,
+                    "error": "إعدادات واتساب غير مكتملة في السيرفر",
+                })
             
             if phone.startswith('0'):
                 phone = '2' + phone
@@ -237,7 +257,8 @@ def pos(request):
     if request.method == 'POST':
         data = json.loads(request.body)
         items = data.get('items', [])
-        invoice_id = data.get('invoice_id')  # جلب معرف الفاتورة إن وجد (حالة التعديل)
+        invoice_id = data.get('invoice_id')
+        booking_id = data.get('booking_id')
 
         if not items:
             return JsonResponse({'success': False, 'error': 'السلة فارغة!'})
@@ -246,8 +267,14 @@ def pos(request):
             # استخدام atomic لمنع مشاكل الـ Race Condition وتداخل طلبات الـ Multi-user
             with transaction.atomic():
                 if invoice_id:
-                    # حالة التعديل: جلب الفاتورة وعمل قفل عليها في الداتابيز لحين انتهاء المعاملة
-                    invoice = Invoice.objects.select_for_update().get(id=invoice_id)
+                    invoice = Invoice.objects.select_for_update().get(
+                        id=invoice_id, is_voided=False,
+                    )
+                    if timezone.localtime(invoice.created_at).date() != timezone.localdate():
+                        return JsonResponse({
+                            'success': False,
+                            'error': 'التعديل مسموح على فواتير اليوم فقط',
+                        })
                     
                     # خصم القيمة القديمة من حساب العميل قبل التعديل لإعادة الاحتساب بدقة
                     if invoice.customer:
@@ -292,12 +319,16 @@ def pos(request):
 
                 invoice.discount = Decimal(data.get('discount', 0) or 0)
                 invoice.notes = data.get('notes', '')
+
+                if booking_id:
+                    booking_obj = Booking.objects.filter(
+                        id=booking_id, branch=invoice.branch, is_vip=True,
+                    ).first()
+                    if booking_obj:
+                        invoice.booking = booking_obj
                 
                 # حفظ مبدئي لتوليد السيريال والـ ID في قاعدة البيانات إن كانت جديدة
                 invoice.save()
-
-
-
 
                 # إعادة بناء عناصر الفاتورة واحتساب المجموع
                 subtotal = 0
@@ -318,16 +349,25 @@ def pos(request):
 
                 # تحديث إحصائياتspent العميل الإجمالية بعد الحفظ
                 if invoice.customer:
-                    if not invoice_id:  # زيادة عدد الزيارات فقط لو كانت فاتورة جديدة وليست تعديلاً
+                    if not invoice_id:
                         invoice.customer.visits_count += 1
                     invoice.customer.total_spent += invoice.final_total
                     invoice.customer.save()
+
+                if invoice.booking_id:
+                    b = invoice.booking
+                    b.status = 'completed'
+                    b.completed_at = timezone.now()
+                    if not b.started_at:
+                        b.started_at = timezone.now()
+                    b.save(update_fields=['status', 'completed_at', 'started_at'])
 
             return JsonResponse({
                 'success': True,
                 'message': '✅ تم الحفظ بنجاح!',
                 'invoice_id': invoice.id,
-                'invoice_number': invoice.invoice_number
+                'invoice_number': str(invoice.display_number()),
+                'serial_number': invoice.serial_number,
             })
 
         except Exception as e:
@@ -343,38 +383,126 @@ def pos(request):
 
 @login_required
 def get_invoice_json(request, invoice_id):
-    """
-    دالة مخصصة لجلب بيانات فاتورة قديمة بصيغة JSON 
-    وعرض محتوياتها داخل شاشة الـ POS لإعادة التعديل عليها
-    """
+    """جلب فاتورة بالمعرف."""
     try:
-        invoice = Invoice.objects.get(id=invoice_id)
-        items_data = []
-        
-        for item in invoice.items.all():
-            items_data.append({
-                'id': item.service.id if item.service else None,
-                'name': item.service.name if item.service else (item.product.name if item.product else "خدمة غير معروفة"),
-                'price': str(item.price),
-                'qty': item.quantity,
-            })
-            
-        return JsonResponse({
-            'success': True,
-            'invoice': {
-                'id': invoice.id,
-                'invoice_number': invoice.invoice_number,
-                'customer_name': invoice.customer.name if invoice.customer else '',
-                'customer_phone': invoice.customer.phone if invoice.customer else '',
-                'barber_id': invoice.barber.id if invoice.barber else '',
-                'payment_method': invoice.payment_method,
-                'bank_id': invoice.bank.id if invoice.bank else '',
-                'discount': str(invoice.discount),
-                'items': items_data
-            }
-        })
+        branch = get_user_branch(request)
+        qs = Invoice.objects.filter(id=invoice_id, is_voided=False)
+        if branch:
+            qs = qs.filter(branch=branch)
+        invoice = qs.get()
+        return JsonResponse(_invoice_payload(invoice))
     except Invoice.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'الفاتورة المطلوبة غير موجودة.'})
+        return JsonResponse({'success': False, 'error': 'الفاتورة غير موجودة'})
+
+
+@login_required
+def pos_lookup_invoice(request):
+    """جلب فاتورة بالمسلسل (1، 2، 3...)."""
+    q = request.GET.get('serial', '').strip()
+    if not q.isdigit():
+        return JsonResponse({'success': False, 'error': 'أدخل رقم المسلسل'})
+    branch = get_user_branch(request)
+    qs = Invoice.objects.filter(is_voided=False, serial_number=int(q))
+    if branch:
+        qs = qs.filter(branch=branch)
+    invoice = qs.first()
+    if not invoice:
+        return JsonResponse({'success': False, 'error': 'فاتورة غير موجودة'})
+    return JsonResponse(_invoice_payload(invoice))
+
+
+@login_required
+def pos_lookup_booking(request):
+    """جلب حجز VIP برقم الدور."""
+    q = request.GET.get('queue', '').strip()
+    if not q.isdigit():
+        return JsonResponse({'success': False, 'error': 'أدخل رقم الحجز'})
+    branch = get_user_branch(request)
+    today = timezone.localdate()
+    qs = Booking.objects.filter(
+        is_vip=True, queue_number=int(q), created_at__date=today,
+    )
+    if branch:
+        qs = qs.filter(branch=branch)
+    booking = qs.prefetch_related('services').first()
+    if not booking:
+        return JsonResponse({'success': False, 'error': 'حجز VIP غير موجود'})
+    if booking.status == 'completed':
+        return JsonResponse({'success': False, 'error': 'هذا الحجز تم تنفيذه'})
+    if booking.status == 'cancelled':
+        return JsonResponse({'success': False, 'error': 'هذا الحجز ملغي'})
+    return JsonResponse(_booking_payload(booking))
+
+
+def _booking_payload(booking):
+    items = [{
+        'id': s.id,
+        'name': s.name,
+        'price': str(s.price),
+        'qty': 1,
+    } for s in booking.services.all()]
+    return {
+        'success': True,
+        'booking': {
+            'id': booking.id,
+            'queue_number': booking.queue_number,
+            'customer_name': booking.customer_name,
+            'customer_phone': booking.customer_phone,
+            'barber_id': booking.barber.id if booking.barber else '',
+            'notes': booking.notes,
+            'items': items,
+            'status': booking.status,
+        },
+    }
+
+
+def _invoice_payload(invoice):
+    items_data = [{
+        'id': item.service.id if item.service else None,
+        'name': item.service.name if item.service else (
+            item.product.name if item.product else '—'
+        ),
+        'price': str(item.price),
+        'qty': item.quantity,
+    } for item in invoice.items.all()]
+    return {
+        'success': True,
+        'invoice': {
+            'id': invoice.id,
+            'serial_number': invoice.serial_number,
+            'invoice_number': str(invoice.display_number()),
+            'customer_name': invoice.customer.name if invoice.customer else '',
+            'customer_phone': invoice.customer.phone if invoice.customer else '',
+            'barber_id': invoice.barber.id if invoice.barber else '',
+            'payment_method': invoice.payment_method,
+            'bank_id': invoice.bank.id if invoice.bank else '',
+            'discount': str(invoice.discount),
+            'items': items_data,
+            'can_edit': invoice.can_edit_today(),
+            'created_at': invoice.created_at.strftime('%Y-%m-%d %H:%M'),
+        },
+    }
+
+
+@login_required
+@require_POST
+def pos_void_invoice(request, pk):
+    """إلغاء فاتورة — خلال اليوم فقط."""
+    branch = get_user_branch(request)
+    qs = Invoice.objects.filter(pk=pk, is_voided=False)
+    if branch:
+        qs = qs.filter(branch=branch)
+    invoice = get_object_or_404(qs)
+    if not invoice.can_edit_today():
+        return JsonResponse({'success': False, 'error': 'الحذف مسموح خلال اليوم فقط'})
+    if invoice.customer:
+        invoice.customer.total_spent -= invoice.final_total
+        if invoice.customer.visits_count > 0:
+            invoice.customer.visits_count -= 1
+        invoice.customer.save()
+    invoice.is_voided = True
+    invoice.save(update_fields=['is_voided'])
+    return JsonResponse({'success': True, 'message': f'تم إلغاء الفاتورة #{invoice.display_number()}'})
 # =============================================================================
 # INVOICE PRINT
 # =============================================================================
@@ -397,43 +525,68 @@ def booking_list(request):
 
 @login_required
 def booking_add(request):
-    branch = get_user_branch(request)
-    
-    # تأكد إن فيه فرع
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
     if not branch:
-        branch = Branch.objects.filter(is_active=True).first()
-    
-    if not branch:
-        messages.error(request, "❌ لا يوجد فرع نشط! الرجاء إنشاء فرع أولاً.")
-        return redirect('branch_add')  # أو redirect('dashboard')
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('dashboard')
+
+    services = Service.objects.filter(is_active=True)
+    barbers = User.objects.filter(is_barber=True, branch=branch, is_active=True)
 
     if request.method == 'POST':
-        form = BookingForm(request.POST)
-        if form.is_valid():
-            booking = form.save(commit=False)
-            booking.branch = branch  # <-- دلوقتي مضمون إنه مش None
+        try:
+            data = json.loads(request.body)
+            items = data.get('items', [])
+            customer_name = data.get('customer_name', '').strip()
+            customer_phone = data.get('customer_phone', '').strip()
 
-            # Generate queue number
-            today = timezone.now().date()
-            tomorrow = today + timezone.timedelta(days=1)
-            
+            if not customer_name or not customer_phone:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'الاسم ورقم الهاتف مطلوبان',
+                })
+            if not items:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'اختر خدمة واحدة على الأقل',
+                })
+
+            today = timezone.localdate()
             last = Booking.objects.filter(
-                branch=booking.branch,
-                created_at__gte=today,
-                created_at__lt=tomorrow
-            ).order_by('queue_number').last()
-            
-            booking.queue_number = (last.queue_number + 1) if last else 1
+                branch=branch, created_at__date=today,
+            ).order_by('-queue_number').first()
+            queue_number = (last.queue_number + 1) if last else 1
 
+            booking = Booking(
+                branch=branch,
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                queue_number=queue_number,
+                is_vip=True,
+                status='waiting',
+                notes=data.get('notes', ''),
+            )
+            barber_id = data.get('barber')
+            if barber_id:
+                booking.barber = User.objects.filter(id=barber_id).first()
             booking.save()
-            form.save_m2m()
-            messages.success(request, f"✅ تم إضافة الحجز رقم {booking.queue_number} بنجاح")
-            return redirect('booking_list')
-    else:
-        form = BookingForm()
-        form.fields['barber'].queryset = User.objects.filter(is_barber=True, branch=branch)
 
-    return render(request, 'salon/booking_form.html', {'form': form})
+            service_ids = [item['id'] for item in items]
+            booking.services.set(Service.objects.filter(id__in=service_ids))
+
+            return JsonResponse({
+                'success': True,
+                'message': f'تم حجز VIP رقم {queue_number}',
+                'queue_number': queue_number,
+                'booking_id': booking.id,
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/booking_form.html', {
+        'services': services,
+        'barbers': barbers,
+    })
 
 @login_required
 @require_POST
@@ -490,6 +643,181 @@ def print_queue_number(request):
 # INVENTORY
 # =============================================================================
 
+def _apply_purchase_lines(purchase, items, branch, user):
+    for row in items:
+        product = Product.objects.select_for_update().get(
+            id=row['product_id'], branch=branch,
+        )
+        qty = int(row['quantity'])
+        cost = Decimal(str(row['cost']))
+        price = Decimal(str(row['price']))
+        if qty <= 0:
+            raise ValueError('الكمية يجب أن تكون أكبر من صفر')
+
+        PurchaseInvoiceItem.objects.create(
+            purchase=purchase,
+            product=product,
+            quantity=qty,
+            cost=cost,
+            price=price,
+        )
+        product.cost = cost
+        product.price = price
+        product.save(update_fields=['cost', 'price'])
+
+        StockMovement.objects.create(
+            branch=branch,
+            product=product,
+            movement_type='in',
+            quantity=qty,
+            cost=cost,
+            notes=f'مشتريات #{purchase.serial_number}',
+            created_by=user,
+            reference_invoice=purchase,
+        )
+
+
+def _apply_consumption_lines(consumption, items, branch, user):
+    for row in items:
+        product = Product.objects.select_for_update().get(
+            id=row['product_id'], branch=branch,
+        )
+        qty = int(row['quantity'])
+        if qty <= 0:
+            raise ValueError('الكمية يجب أن تكون أكبر من صفر')
+        if product.stock < qty:
+            raise ValueError(f'المخزون غير كافٍ للصنف {product.name} (متاح: {product.stock})')
+
+        ConsumptionInvoiceItem.objects.create(
+            consumption=consumption,
+            product=product,
+            quantity=qty,
+            unit_cost=product.cost,
+        )
+        StockMovement.objects.create(
+            branch=branch,
+            product=product,
+            movement_type='out',
+            quantity=qty,
+            cost=product.cost,
+            notes=f'استهلاك #{consumption.serial_number}',
+            created_by=user,
+            reference_consumption=consumption,
+        )
+
+
+def _consumption_payload(consumption):
+    items = [{
+        'product_id': i.product_id,
+        'name': i.product.name,
+        'code': i.product.code,
+        'quantity': i.quantity,
+        'unit_cost': str(i.unit_cost),
+    } for i in consumption.items.select_related('product')]
+    return {
+        'success': True,
+        'consumption': {
+            'id': consumption.id,
+            'serial_number': consumption.serial_number,
+            'items': items,
+        },
+    }
+
+
+def _inventory_report_context(branch):
+    purchase_items = PurchaseInvoiceItem.objects.select_related(
+        'product', 'purchase',
+    ).order_by('-purchase__created_at')
+    consumption_items = ConsumptionInvoiceItem.objects.select_related(
+        'product', 'consumption',
+    ).order_by('-consumption__created_at')
+    if branch:
+        purchase_items = purchase_items.filter(purchase__branch=branch)
+        consumption_items = consumption_items.filter(consumption__branch=branch)
+
+    incoming = []
+    grand_in_cost = Decimal('0')
+    grand_in_sale = Decimal('0')
+    for item in purchase_items[:500]:
+        grand_in_cost += item.line_cost
+        grand_in_sale += item.line_price
+        incoming.append({
+            'serial': item.purchase.serial_number,
+            'date': item.purchase.created_at,
+            'code': item.product.code,
+            'name': item.product.name,
+            'qty': item.quantity,
+            'cost': item.cost,
+            'price': item.price,
+            'line_cost': item.line_cost,
+            'line_sale': item.line_price,
+        })
+
+    outgoing = []
+    grand_out_qty = 0
+    grand_out_cost = Decimal('0')
+    for item in consumption_items[:500]:
+        grand_out_qty += item.quantity
+        grand_out_cost += item.line_cost
+        outgoing.append({
+            'serial': item.consumption.serial_number,
+            'date': item.consumption.created_at,
+            'code': item.product.code,
+            'name': item.product.name,
+            'qty': item.quantity,
+            'unit_cost': item.unit_cost,
+            'line_cost': item.line_cost,
+        })
+
+    net_qty = sum(i['qty'] for i in incoming) - grand_out_qty
+    net_cost = grand_in_cost - grand_out_cost
+    net_sale = grand_in_sale - grand_out_cost
+
+    return {
+        'incoming': incoming,
+        'outgoing': outgoing,
+        'grand_in_cost': grand_in_cost,
+        'grand_in_sale': grand_in_sale,
+        'grand_out_qty': grand_out_qty,
+        'grand_out_cost': grand_out_cost,
+        'net_qty': net_qty,
+        'net_cost': net_cost,
+        'net_sale': net_sale,
+    }
+
+
+def _render_inventory_pdf(request, template, context, filename):
+    html_string = render_to_string(template, context)
+    html = HTML(string=html_string, base_url=request.build_absolute_uri())
+    css_path = os.path.join(settings.BASE_DIR, 'salon', 'static', 'css', 'pdf_rtl.css')
+    if os.path.exists(css_path):
+        pdf = html.write_pdf(stylesheets=[CSS(css_path)])
+    else:
+        pdf = html.write_pdf()
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{filename}"'
+    return response
+
+
+def _purchase_payload(purchase):
+    items = [{
+        'product_id': i.product_id,
+        'name': i.product.name,
+        'code': i.product.code,
+        'cost': str(i.cost),
+        'price': str(i.price),
+        'quantity': i.quantity,
+    } for i in purchase.items.select_related('product')]
+    return {
+        'success': True,
+        'purchase': {
+            'id': purchase.id,
+            'serial_number': purchase.serial_number,
+            'items': items,
+        },
+    }
+
+
 @login_required
 def inventory(request):
     if not request.user.can_inventory:
@@ -505,6 +833,408 @@ def inventory(request):
         'low_stock': low_stock,
         'out_of_stock': out_of_stock,
     })
+
+
+@login_required
+def inventory_item_add(request):
+    """تكويد صنف — كود تلقائي + استرجاع بالكود."""
+    if not request.user.can_inventory:
+        messages.error(request, "ليس لديك صلاحية الوصول")
+        return redirect('dashboard')
+
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('inventory')
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            action = data.get('action', 'save')
+            product_id = data.get('product_id')
+            code = str(data.get('code', '')).strip()
+            name = data.get('name', '').strip()
+
+            if action == 'delete':
+                if not product_id:
+                    return JsonResponse({'success': False, 'error': 'اختر صنفاً أولاً'})
+                product = Product.objects.get(id=product_id, branch=branch)
+                ok, msg = product.can_delete_catalog()
+                if not ok:
+                    return JsonResponse({'success': False, 'error': msg})
+                product.delete()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'تم حذف الصنف',
+                    'next_code': Product.next_code(branch),
+                })
+
+            if not name:
+                return JsonResponse({'success': False, 'error': 'اسم الصنف مطلوب'})
+
+            if product_id:
+                product = Product.objects.get(id=product_id, branch=branch)
+                product.name = name
+                product.save(update_fields=['name'])
+                return JsonResponse({'success': True, 'message': 'تم تحديث الصنف'})
+
+            if not code:
+                code = Product.next_code(branch)
+            elif Product.objects.filter(branch=branch, code=code).exists():
+                return JsonResponse({'success': False, 'error': f'كود {code} موجود — اضغط Enter لتحميله'})
+
+            Product.objects.create(
+                branch=branch, code=code, name=name,
+                price=0, cost=0, stock=0,
+            )
+            return JsonResponse({
+                'success': True,
+                'message': f'تم تكويد الصنف {name}',
+                'next_code': Product.next_code(branch),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/inventory_item_form.html', {
+        'next_code': Product.next_code(branch),
+    })
+
+
+@login_required
+def inventory_item_lookup(request):
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'success': False, 'error': 'أدخل كود الصنف'})
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    product = Product.objects.filter(branch=branch, code=code).first()
+    if not product:
+        return JsonResponse({'success': False, 'error': 'صنف غير موجود'})
+    can_del, del_msg = product.can_delete_catalog()
+    return JsonResponse({
+        'success': True,
+        'product': {
+            'id': product.id,
+            'code': product.code,
+            'name': product.name,
+            'stock': product.stock,
+            'can_delete': can_del,
+            'delete_message': del_msg,
+        },
+    })
+
+
+@login_required
+def inventory_purchase_add(request):
+    """فاتورة مشتريات مخزن — عدة أصناف."""
+    if not request.user.can_inventory:
+        messages.error(request, "ليس لديك صلاحية الوصول")
+        return redirect('dashboard')
+
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('inventory')
+
+    products = Product.objects.filter(branch=branch, is_active=True).order_by('name')
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            items = data.get('items', [])
+            purchase_id = data.get('purchase_id')
+            if not items:
+                return JsonResponse({'success': False, 'error': 'أضف صنفاً واحداً على الأقل'})
+
+            with transaction.atomic():
+                if purchase_id:
+                    purchase = PurchaseInvoice.objects.select_for_update().get(
+                        id=purchase_id, branch=branch,
+                    )
+                    purchase.reverse_stock()
+                else:
+                    purchase = PurchaseInvoice(
+                        branch=branch,
+                        created_by=request.user,
+                        notes=data.get('notes', ''),
+                    )
+                    purchase.save()
+
+                _apply_purchase_lines(purchase, items, branch, request.user)
+
+            return JsonResponse({
+                'success': True,
+                'serial_number': purchase.serial_number,
+                'purchase_id': purchase.id,
+                'message': f'تم حفظ فاتورة المشتريات #{purchase.serial_number}',
+                'next_serial': PurchaseInvoice.next_serial(branch),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/inventory_purchase.html', {
+        'products': products,
+        'next_serial': PurchaseInvoice.next_serial(branch),
+    })
+
+
+@login_required
+def inventory_purchase_lookup(request):
+    q = request.GET.get('serial', '').strip()
+    if not q.isdigit():
+        return JsonResponse({'success': False, 'error': 'أدخل رقم المسلسل'})
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    qs = PurchaseInvoice.objects.prefetch_related('items__product')
+    if branch:
+        qs = qs.filter(branch=branch)
+    purchase = qs.filter(serial_number=int(q)).first()
+    if not purchase:
+        return JsonResponse({'success': False, 'error': 'فاتورة غير موجودة'})
+    return JsonResponse(_purchase_payload(purchase))
+
+
+@login_required
+@require_POST
+def inventory_purchase_delete(request, pk):
+    if not request.user.can_inventory:
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
+    branch = get_user_branch(request)
+    qs = PurchaseInvoice.objects.filter(pk=pk)
+    if branch:
+        qs = qs.filter(branch=branch)
+    purchase = get_object_or_404(qs)
+    try:
+        with transaction.atomic():
+            purchase.reverse_stock()
+            purchase.delete()
+        return JsonResponse({
+            'success': True,
+            'message': 'تم حذف فاتورة المشتريات',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def inventory_consumption_add(request):
+    """أصناف مستهلكة — تقليل المخزون."""
+    if not request.user.can_inventory:
+        return redirect('dashboard')
+
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('inventory')
+
+    products = Product.objects.filter(branch=branch, is_active=True, stock__gt=0).order_by('name')
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            items = data.get('items', [])
+            consumption_id = data.get('consumption_id')
+            if not items:
+                return JsonResponse({'success': False, 'error': 'أضف صنفاً واحداً على الأقل'})
+
+            with transaction.atomic():
+                if consumption_id:
+                    consumption = ConsumptionInvoice.objects.select_for_update().get(
+                        id=consumption_id, branch=branch,
+                    )
+                    consumption.reverse_stock()
+                else:
+                    consumption = ConsumptionInvoice(
+                        branch=branch,
+                        created_by=request.user,
+                        notes=data.get('notes', ''),
+                    )
+                    consumption.save()
+
+                _apply_consumption_lines(consumption, items, branch, request.user)
+
+            return JsonResponse({
+                'success': True,
+                'serial_number': consumption.serial_number,
+                'consumption_id': consumption.id,
+                'message': f'تم حفظ حركة الاستهلاك #{consumption.serial_number}',
+                'next_serial': ConsumptionInvoice.next_serial(branch),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/inventory_consumption.html', {
+        'products': products,
+        'next_serial': ConsumptionInvoice.next_serial(branch),
+    })
+
+
+@login_required
+def inventory_consumption_lookup(request):
+    q = request.GET.get('serial', '').strip()
+    if not q.isdigit():
+        return JsonResponse({'success': False, 'error': 'أدخل رقم المسلسل'})
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    qs = ConsumptionInvoice.objects.prefetch_related('items__product')
+    if branch:
+        qs = qs.filter(branch=branch)
+    consumption = qs.filter(serial_number=int(q)).first()
+    if not consumption:
+        return JsonResponse({'success': False, 'error': 'حركة غير موجودة'})
+    return JsonResponse(_consumption_payload(consumption))
+
+
+@login_required
+@require_POST
+def inventory_consumption_delete(request, pk):
+    if not request.user.can_inventory:
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
+    branch = get_user_branch(request)
+    qs = ConsumptionInvoice.objects.filter(pk=pk)
+    if branch:
+        qs = qs.filter(branch=branch)
+    consumption = get_object_or_404(qs)
+    try:
+        with transaction.atomic():
+            consumption.reverse_stock()
+            consumption.delete()
+        return JsonResponse({'success': True, 'message': 'تم حذف حركة الاستهلاك'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
+@login_required
+def inventory_report(request):
+    """تقرير المشتريات والاستهلاك."""
+    if not request.user.can_inventory:
+        return redirect('dashboard')
+
+    branch = get_user_branch(request)
+    ctx = _inventory_report_context(branch)
+    ctx['branch'] = branch
+    return render(request, 'salon/inventory_report.html', ctx)
+
+
+@login_required
+def inventory_report_pdf(request):
+    if not request.user.can_inventory:
+        return redirect('dashboard')
+    branch = get_user_branch(request)
+    ctx = _inventory_report_context(branch)
+    ctx.update({'branch': branch, 'now': timezone.now(), 'title': 'تقرير المشتريات والاستهلاك'})
+    return _render_inventory_pdf(
+        request, 'salon/inventory_report_pdf.html', ctx,
+        f'inventory_report_{timezone.now().strftime("%Y%m%d")}.pdf',
+    )
+
+
+@login_required
+def inventory_purchase_detail(request, pk):
+    if not request.user.can_inventory:
+        return redirect('dashboard')
+    branch = get_user_branch(request)
+    qs = PurchaseInvoice.objects.prefetch_related('items__product')
+    if branch:
+        qs = qs.filter(branch=branch)
+    purchase = get_object_or_404(qs, pk=pk)
+    return render(request, 'salon/inventory_purchase_detail.html', {
+        'purchase': purchase,
+        'total_cost': purchase.total_cost,
+        'total_price': purchase.total_price,
+    })
+
+
+@login_required
+def inventory_totals(request):
+    """صافي إجماليات المخزون."""
+    if not request.user.can_inventory:
+        return redirect('dashboard')
+
+    branch = get_user_branch(request)
+    products = Product.objects.filter(is_active=True)
+    if branch:
+        products = products.filter(branch=branch)
+
+    rows = []
+    grand_cost = Decimal('0')
+    grand_sale = Decimal('0')
+
+    for p in products.order_by('code', 'name'):
+        agg = PurchaseInvoiceItem.objects.filter(product=p).aggregate(
+            tq=Sum('quantity'),
+            tc=Sum(F('quantity') * F('cost')),
+            tp=Sum(F('quantity') * F('price')),
+        )
+        tq = agg['tq'] or 0
+        if tq:
+            avg_cost = (agg['tc'] or 0) / tq
+            avg_price = (agg['tp'] or 0) / tq
+        else:
+            avg_cost = p.cost
+            avg_price = p.price
+
+        qty = p.stock
+        line_cost = Decimal(qty) * Decimal(avg_cost)
+        line_sale = Decimal(qty) * Decimal(avg_price)
+        grand_cost += line_cost
+        grand_sale += line_sale
+
+        rows.append({
+            'product': p,
+            'qty': qty,
+            'avg_cost': avg_cost,
+            'avg_price': avg_price,
+            'line_cost': line_cost,
+            'line_sale': line_sale,
+        })
+
+    return render(request, 'salon/inventory_totals.html', {
+        'rows': rows,
+        'grand_cost': grand_cost,
+        'grand_sale': grand_sale,
+    })
+
+
+@login_required
+def inventory_totals_pdf(request):
+    if not request.user.can_inventory:
+        return redirect('dashboard')
+    branch = get_user_branch(request)
+    products = Product.objects.filter(is_active=True)
+    if branch:
+        products = products.filter(branch=branch)
+    rows = []
+    grand_cost = Decimal('0')
+    grand_sale = Decimal('0')
+    for p in products.order_by('code', 'name'):
+        agg = PurchaseInvoiceItem.objects.filter(product=p).aggregate(
+            tq=Sum('quantity'),
+            tc=Sum(F('quantity') * F('cost')),
+            tp=Sum(F('quantity') * F('price')),
+        )
+        tq = agg['tq'] or 0
+        if tq:
+            avg_cost = (agg['tc'] or 0) / tq
+            avg_price = (agg['tp'] or 0) / tq
+        else:
+            avg_cost = p.cost
+            avg_price = p.price
+        qty = p.stock
+        line_cost = Decimal(qty) * Decimal(avg_cost)
+        line_sale = Decimal(qty) * Decimal(avg_price)
+        grand_cost += line_cost
+        grand_sale += line_sale
+        rows.append({
+            'product': p, 'qty': qty,
+            'avg_cost': avg_cost, 'avg_price': avg_price,
+            'line_cost': line_cost, 'line_sale': line_sale,
+        })
+    ctx = {
+        'rows': rows, 'grand_cost': grand_cost, 'grand_sale': grand_sale,
+        'branch': branch, 'now': timezone.now(),
+    }
+    return _render_inventory_pdf(
+        request, 'salon/inventory_totals_pdf.html', ctx,
+        f'inventory_totals_{timezone.now().strftime("%Y%m%d")}.pdf',
+    )
 
 
 @login_required
@@ -536,37 +1266,306 @@ def stock_movement_add(request):
 # EXPENSES
 # =============================================================================
 
+def _expense_voucher_net(qs):
+    out = qs.filter(voucher_type='out').aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    ret = qs.filter(voucher_type='return').aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return out - ret
+
+
+def _report_expense_total(branch, start_date, end_date):
+    vouchers = ExpenseVoucher.objects.all()
+    legacy = Expense.objects.all()
+    if branch:
+        vouchers = vouchers.filter(branch=branch)
+        legacy = legacy.filter(branch=branch)
+    if start_date and end_date:
+        vouchers = vouchers.filter(date__range=[start_date, end_date])
+        legacy = legacy.filter(date__range=[start_date, end_date])
+    net = _expense_voucher_net(vouchers)
+    old = legacy.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    return net + old
+
+
+def _expense_voucher_payload(voucher):
+    return {
+        'success': True,
+        'voucher': {
+            'id': voucher.id,
+            'serial_number': voucher.serial_number,
+            'expense_type_id': voucher.expense_type_id,
+            'expense_name': voucher.expense_type.name,
+            'expense_code': voucher.expense_type.code,
+            'payment_method': voucher.payment_method,
+            'bank_id': voucher.bank_id,
+            'amount': str(voucher.amount),
+            'notes': voucher.notes,
+        },
+    }
+
+
+def _save_expense_voucher(request, branch, voucher_type):
+    data = json.loads(request.body)
+    voucher_id = data.get('voucher_id')
+    expense_type_id = data.get('expense_type_id')
+    payment_method = data.get('payment_method', 'cash')
+    bank_id = data.get('bank_id')
+    amount = Decimal(str(data.get('amount', 0)))
+    notes = data.get('notes', '')
+
+    if not expense_type_id:
+        return JsonResponse({'success': False, 'error': 'اختر المصروف'})
+    if amount <= 0:
+        return JsonResponse({'success': False, 'error': 'أدخل مبلغاً صحيحاً'})
+    if payment_method == 'bank' and not bank_id:
+        return JsonResponse({'success': False, 'error': 'اختر البنك'})
+
+    expense_type = ExpenseType.objects.get(id=expense_type_id, branch=branch, is_active=True)
+    bank = None
+    if payment_method == 'bank':
+        bank = Bank.objects.get(id=bank_id, is_active=True)
+
+    if voucher_id:
+        voucher = ExpenseVoucher.objects.get(id=voucher_id, branch=branch, voucher_type=voucher_type)
+        voucher.expense_type = expense_type
+        voucher.payment_method = payment_method
+        voucher.bank = bank if payment_method == 'bank' else None
+        voucher.amount = amount
+        voucher.notes = notes
+        voucher.save()
+        msg = 'تم تحديث السند'
+    else:
+        voucher = ExpenseVoucher(
+            branch=branch,
+            voucher_type=voucher_type,
+            expense_type=expense_type,
+            payment_method=payment_method,
+            bank=bank if payment_method == 'bank' else None,
+            amount=amount,
+            notes=notes,
+            created_by=request.user,
+        )
+        voucher.save()
+        msg = f'تم حفظ السند #{voucher.serial_number}'
+
+    return JsonResponse({
+        'success': True,
+        'message': msg,
+        'serial_number': voucher.serial_number,
+        'voucher_id': voucher.id,
+        'next_serial': ExpenseVoucher.next_serial(branch, voucher_type),
+    })
+
+
 @login_required
 def expense_list(request):
     if not request.user.can_expenses:
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
-    expenses = get_branch_queryset(request, Expense, '-date')
-    return render(request, 'salon/expense_list.html', {'expenses': expenses})
+    branch = get_user_branch(request)
+    qs = ExpenseVoucher.objects.select_related(
+        'expense_type', 'bank', 'created_by',
+    )
+    if branch:
+        qs = qs.filter(branch=branch)
+    vouchers = qs.order_by('-created_at')[:100]
+
+    return render(request, 'salon/expense_list.html', {'vouchers': vouchers})
+
+
+@login_required
+def expense_type_add(request):
+    """تكويد مصروف — كود تلقائي + اسم."""
+    if not request.user.can_expenses:
+        return redirect('dashboard')
+
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('expense_list')
+
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            action = data.get('action', 'save')
+            type_id = data.get('type_id')
+            code = str(data.get('code', '')).strip()
+            name = data.get('name', '').strip()
+
+            if action == 'delete':
+                if not type_id:
+                    return JsonResponse({'success': False, 'error': 'اختر مصروفاً أولاً'})
+                expense_type = ExpenseType.objects.get(id=type_id, branch=branch)
+                ok, msg = expense_type.can_delete_catalog()
+                if not ok:
+                    return JsonResponse({'success': False, 'error': msg})
+                expense_type.delete()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'تم حذف المصروف',
+                    'next_code': ExpenseType.next_code(branch),
+                })
+
+            if not name:
+                return JsonResponse({'success': False, 'error': 'اسم المصروف مطلوب'})
+
+            if type_id:
+                expense_type = ExpenseType.objects.get(id=type_id, branch=branch)
+                expense_type.name = name
+                expense_type.save(update_fields=['name'])
+                return JsonResponse({'success': True, 'message': 'تم تحديث المصروف'})
+
+            if not code:
+                code = ExpenseType.next_code(branch)
+            elif ExpenseType.objects.filter(branch=branch, code=code).exists():
+                return JsonResponse({'success': False, 'error': f'كود {code} موجود — اضغط Enter لتحميله'})
+
+            ExpenseType.objects.create(branch=branch, code=code, name=name)
+            return JsonResponse({
+                'success': True,
+                'message': f'تم تكويد المصروف {name}',
+                'next_code': ExpenseType.next_code(branch),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/expense_type_form.html', {
+        'next_code': ExpenseType.next_code(branch),
+    })
+
+
+@login_required
+def expense_type_lookup(request):
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'success': False, 'error': 'أدخل كود المصروف'})
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    expense_type = ExpenseType.objects.filter(branch=branch, code=code).first()
+    if not expense_type:
+        return JsonResponse({'success': False, 'error': 'مصروف غير موجود'})
+    can_del, del_msg = expense_type.can_delete_catalog()
+    return JsonResponse({
+        'success': True,
+        'expense_type': {
+            'id': expense_type.id,
+            'code': expense_type.code,
+            'name': expense_type.name,
+            'can_delete': can_del,
+            'delete_message': del_msg,
+        },
+    })
+
+
+@login_required
+def expense_out_add(request):
+    if not request.user.can_expenses:
+        return redirect('dashboard')
+
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('expense_list')
+
+    if request.method == 'POST':
+        try:
+            return _save_expense_voucher(request, branch, 'out')
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return _render_expense_voucher_form(request, branch, 'out')
+
+
+@login_required
+def expense_out_lookup(request):
+    return _expense_voucher_lookup(request, 'out')
+
+
+@login_required
+@require_POST
+def expense_out_delete(request, pk):
+    return _expense_voucher_delete(request, pk, 'out')
+
+
+@login_required
+def expense_return_add(request):
+    if not request.user.can_expenses:
+        return redirect('dashboard')
+
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    if not branch:
+        messages.error(request, "لا يوجد فرع نشط")
+        return redirect('expense_list')
+
+    if request.method == 'POST':
+        try:
+            return _save_expense_voucher(request, branch, 'return')
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return _render_expense_voucher_form(request, branch, 'return')
+
+
+@login_required
+def expense_return_lookup(request):
+    return _expense_voucher_lookup(request, 'return')
+
+
+@login_required
+@require_POST
+def expense_return_delete(request, pk):
+    return _expense_voucher_delete(request, pk, 'return')
+
+
+def _render_expense_voucher_form(request, branch, voucher_type):
+    expense_types = ExpenseType.objects.filter(branch=branch, is_active=True).order_by('code', 'name')
+    banks = Bank.objects.filter(is_active=True)
+    if branch:
+        banks = banks.filter(Q(branch=branch) | Q(branch__isnull=True))
+    is_return = voucher_type == 'return'
+    ctx = {
+        'expense_types': expense_types,
+        'banks': banks,
+        'next_serial': ExpenseVoucher.next_serial(branch, voucher_type),
+        'voucher_type': voucher_type,
+        'is_return': is_return,
+        'save_url': '/expenses/return/add/' if is_return else '/expenses/out/add/',
+        'lookup_url': '/expenses/return/lookup/' if is_return else '/expenses/out/lookup/',
+        'delete_prefix': '/expenses/return/' if is_return else '/expenses/out/',
+        'header_bg': 'linear-gradient(135deg,#27ae60,#2ecc71)' if is_return else 'linear-gradient(135deg,#e74c3c,#c0392b)',
+    }
+    return render(request, 'salon/expense_voucher.html', ctx)
+
+
+def _expense_voucher_lookup(request, voucher_type):
+    q = request.GET.get('serial', '').strip()
+    if not q.isdigit():
+        return JsonResponse({'success': False, 'error': 'أدخل رقم المسلسل'})
+    branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
+    qs = ExpenseVoucher.objects.select_related('expense_type', 'bank')
+    if branch:
+        qs = qs.filter(branch=branch)
+    voucher = qs.filter(serial_number=int(q), voucher_type=voucher_type).first()
+    if not voucher:
+        return JsonResponse({'success': False, 'error': 'سند غير موجود'})
+    return JsonResponse(_expense_voucher_payload(voucher))
+
+
+def _expense_voucher_delete(request, pk, voucher_type):
+    if not request.user.can_expenses:
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
+    branch = get_user_branch(request)
+    qs = ExpenseVoucher.objects.filter(pk=pk, voucher_type=voucher_type)
+    if branch:
+        qs = qs.filter(branch=branch)
+    voucher = get_object_or_404(qs)
+    voucher.delete()
+    label = 'مرتد المصروف' if voucher_type == 'return' else 'المصروف'
+    return JsonResponse({'success': True, 'message': f'تم حذف {label}'})
 
 
 @login_required
 def expense_add(request):
-    if not request.user.can_expenses:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
-        return redirect('dashboard')
-
-    branch = get_user_branch(request)
-
-    if request.method == 'POST':
-        form = ExpenseForm(request.POST, request.FILES)
-        if form.is_valid():
-            expense = form.save(commit=False)
-            expense.branch = branch or Branch.objects.first()
-            expense.created_by = request.user
-            expense.save()
-            messages.success(request, "✅ تم تسجيل المصروف بنجاح")
-            return redirect('expense_list')
-    else:
-        form = ExpenseForm()
-
-    return render(request, 'salon/expense_form.html', {'form': form})
+    return redirect('expense_out_add')
 
 # =============================================================================
 # reports_pdf
@@ -580,21 +1579,18 @@ def reports_pdf(request):
     end_date = request.GET.get('end_date')
     
     invoices = Invoice.objects.all()
-    expenses = Expense.objects.all()
     
     if not request.user.is_superuser:
         if not branch:
             messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
             return redirect('dashboard')
         invoices = invoices.filter(branch=branch)
-        expenses = expenses.filter(branch=branch)
     
     if start_date and end_date:
         invoices = invoices.filter(created_at__date__range=[start_date, end_date])
-        expenses = expenses.filter(date__range=[start_date, end_date])
     
     total_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
-    total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
+    total_expenses = _report_expense_total(branch if not request.user.is_superuser else None, start_date, end_date)
     net_profit = total_revenue - total_expenses
     total_invoices = invoices.count()
 
@@ -688,22 +1684,19 @@ def reports(request):
     end_date = request.GET.get('end_date')
     
     invoices = Invoice.objects.all()
-    expenses = Expense.objects.all()
     
     if not request.user.is_superuser:
         if not branch:
             messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
             return redirect('dashboard')
         invoices = invoices.filter(branch=branch)
-        expenses = expenses.filter(branch=branch)
     
     if start_date and end_date:
         invoices = invoices.filter(created_at__date__range=[start_date, end_date])
-        expenses = expenses.filter(date__range=[start_date, end_date])
     
     # التوتال العام
     total_revenue = invoices.aggregate(total=Sum('final_total'))['total'] or 0
-    total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
+    total_expenses = _report_expense_total(branch if not request.user.is_superuser else None, start_date, end_date)
     net_profit = total_revenue - total_expenses
     total_invoices = invoices.count()
 
@@ -798,26 +1791,93 @@ def reports(request):
 
 @login_required
 def service_list(request):
-    services = get_branch_queryset(request, Service, 'name')
+    services = get_branch_queryset(request, Service, 'code')
     return render(request, 'salon/service_list.html', {'services': services})
 
 
 @login_required
 def service_add(request):
-    branch = get_user_branch(request)
-
+    """تكويد خدمة — مسلسل + اسم + سعر + نشط."""
     if request.method == 'POST':
-        form = ServiceForm(request.POST)
-        if form.is_valid():
-            service = form.save()
-            # service.branch = branch or Branch.objects.first()
-            service.save()
-            messages.success(request, f"✅ تم إضافة الخدمة {service.name} بنجاح")
-            return redirect('service_list')
-    else:
-        form = ServiceForm()
+        try:
+            data = json.loads(request.body)
+            action = data.get('action', 'save')
+            service_id = data.get('service_id')
+            code = str(data.get('code', '')).strip()
+            name = data.get('name', '').strip()
+            price = Decimal(str(data.get('price', 0)))
+            is_active = bool(data.get('is_active', True))
 
-    return render(request, 'salon/service_form.html', {'form': form})
+            if action == 'delete':
+                if not service_id:
+                    return JsonResponse({'success': False, 'error': 'اختر خدمة أولاً'})
+                service = Service.objects.get(id=service_id)
+                ok, msg = service.can_delete_catalog()
+                if not ok:
+                    return JsonResponse({'success': False, 'error': msg})
+                service.delete()
+                return JsonResponse({
+                    'success': True,
+                    'message': 'تم حذف الخدمة',
+                    'next_code': Service.next_code(),
+                })
+
+            if not name:
+                return JsonResponse({'success': False, 'error': 'اسم الخدمة مطلوب'})
+            if price < 0:
+                return JsonResponse({'success': False, 'error': 'أدخل سعراً صحيحاً'})
+
+            if service_id:
+                service = Service.objects.get(id=service_id)
+                service.name = name
+                service.price = price
+                service.is_active = is_active
+                service.save(update_fields=['name', 'price', 'is_active'])
+                return JsonResponse({'success': True, 'message': 'تم تحديث الخدمة'})
+
+            if not code:
+                code = Service.next_code()
+            elif Service.objects.filter(code=code).exists():
+                return JsonResponse({'success': False, 'error': f'مسلسل {code} موجود — اضغط Enter لتحميله'})
+
+            Service.objects.create(
+                code=code, name=name, price=price,
+                is_active=is_active, cost=0, duration=30,
+            )
+            return JsonResponse({
+                'success': True,
+                'message': f'تم تكويد الخدمة {name}',
+                'next_code': Service.next_code(),
+            })
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+
+    return render(request, 'salon/service_form.html', {
+        'next_code': Service.next_code(),
+    })
+
+
+@login_required
+def service_lookup(request):
+    code = request.GET.get('code', '').strip()
+    if not code:
+        return JsonResponse({'success': False, 'error': 'أدخل المسلسل'})
+    service = Service.objects.filter(code=code).first()
+    if not service:
+        return JsonResponse({'success': False, 'error': 'خدمة غير موجودة'})
+    can_del, del_msg = service.can_delete_catalog()
+    return JsonResponse({
+        'success': True,
+        'service': {
+            'id': service.id,
+            'code': service.code,
+            'name': service.name,
+            'price': str(service.price),
+            'is_active': service.is_active,
+            'can_delete': can_del,
+            'delete_message': del_msg,
+        },
+    })
 
 
 # =============================================================================
