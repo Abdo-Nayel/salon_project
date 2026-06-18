@@ -36,8 +36,21 @@
             box-shadow: -5px 0 20px rgba(0,0,0,0.1);
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
         .sidebar h4 { font-weight: 800; margin-bottom: 30px; text-align: center; white-space: nowrap; }
+        .sidebar-nav { flex: 1; }
+        .sidebar-vendor {
+            margin-top: auto;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            text-align: center;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.75);
+            letter-spacing: 0.5px;
+        }
+        .sidebar-vendor strong { color: #fff; font-weight: 700; }
         .sidebar a {
             color: rgba(255,255,255,0.9); 
             text-decoration: none;
@@ -183,6 +196,7 @@
 
     <div class="sidebar" id="sidebarMenu">
         <h4>💈 Salon Pro</h4>
+        <div class="sidebar-nav">
         
         <a href="/" class="{% if request.path == '/' %}active{% endif %}"><i class="fas fa-home"></i> <span>الرئيسية</span></a>
         
@@ -223,6 +237,8 @@
         {% endif %}
         
         <a href="/logout/"><i class="fas fa-sign-out-alt"></i> <span>خروج</span></a>
+        </div>
+        <div class="sidebar-vendor">تطوير <strong>{{ project_vendor }}</strong></div>
     </div>
 
     <div class="main">

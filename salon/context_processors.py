@@ -1,11 +1,14 @@
 """
 Salon Context Processors
 """
+from django.conf import settings
 
 
 def branch_context(request):
     """Add branch context to all templates"""
-    context = {}
+    context = {
+        'project_vendor': getattr(settings, 'PROJECT_VENDOR', 'LyomasTech'),
+    }
 
     if request.user.is_authenticated:
         context['user_branch'] = request.user.branch

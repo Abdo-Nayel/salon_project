@@ -558,6 +558,7 @@ def booking_add(request):
         return redirect('dashboard')
 
     services = Service.objects.filter(is_active=True)
+    employees = Employee.objects.filter(branch=branch, is_active=True).order_by('serial_number')
 
     if request.method == 'POST':
         try:
@@ -576,6 +577,11 @@ def booking_add(request):
                     'success': False,
                     'error': 'اختر خدمة واحدة على الأقل',
                 })
+            if not _resolve_employee(branch, data):
+                return JsonResponse({
+                    'success': False,
+                    'error': 'الموظف مطلوب — اختره من القائمة أو أدخل كوده',
+                })
 
             today = timezone.localdate()
             last = Booking.objects.filter(
@@ -592,12 +598,8 @@ def booking_add(request):
                 status='waiting',
                 notes=data.get('notes', ''),
             )
-            barber_id = data.get('barber')
-            if barber_id:
-                booking.barber = User.objects.filter(id=barber_id).first()
             booking.employee = _resolve_employee(branch, data)
-            if booking.employee:
-                booking.barber = None
+            booking.barber = None
             booking.save()
 
             service_ids = [item['id'] for item in items]
@@ -614,6 +616,7 @@ def booking_add(request):
 
     return render(request, 'salon/booking_form.html', {
         'services': services,
+        'employees': employees,
     })
 
 @login_required

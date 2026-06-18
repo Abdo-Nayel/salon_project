@@ -103,7 +103,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-LANGUAGE_CODE = 'ar'
+LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Africa/Cairo'
 USE_I18N = True
 USE_L10N = True
@@ -123,6 +123,8 @@ AUTH_USER_MODEL = 'salon.User'
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
+
+PROJECT_VENDOR = 'LyomasTech'
 
 MESSAGE_TAGS = {
     messages_constants.DEBUG: 'secondary',

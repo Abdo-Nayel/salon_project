@@ -40,9 +40,14 @@
                 <input type="text" id="customerName" class="form-control mb-2" placeholder="اسم العميل *" required>
                 <input type="text" id="customerPhone" class="form-control mb-2" placeholder="رقم الهاتف *" required>
 
-                <label class="form-label fw-bold small">كود الموظف (اختياري)</label>
-                <input type="text" id="employeeCode" class="form-control mb-2" placeholder="كود الموظف — Enter" inputmode="numeric">
-                <div id="employeeNameDisplay" class="small text-muted mb-2"></div>
+                <label class="form-label fw-bold small">الموظف <span class="text-danger">*</span></label>
+                <select id="employeeSelect" class="form-select mb-2" onchange="onEmployeeSelect()">
+                    <option value="">— اختر الموظف —</option>
+                    {% for e in employees %}
+                    <option value="{{ e.serial_number }}" data-id="{{ e.id }}" data-name="{{ e.name }}">{{ e.serial_number }} — {{ e.name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" id="employeeCode" class="form-control mb-3" placeholder="أو اكتب كود الموظف — Enter" inputmode="numeric" autocomplete="off">
 
                 <textarea id="notes" class="form-control mb-3" rows="2" placeholder="ملاحظات (اختياري)"></textarea>
 
@@ -64,11 +69,50 @@
 let cart = [];
 let currentEmployeeId = null;
 
-function loadEmployeeFromCode() {
+function syncEmployeeDropdown(code) {
+    const sel = document.getElementById('employeeSelect');
+    if (!sel) return;
+    const match = [...sel.options].find(o => o.value === String(code || ''));
+    sel.value = match ? match.value : '';
+}
+
+function applyEmployeeSelection({code = '', id = null} = {}) {
+    document.getElementById('employeeCode').value = code;
+    syncEmployeeDropdown(code);
+    currentEmployeeId = id;
+}
+
+function onEmployeeSelect() {
+    const sel = document.getElementById('employeeSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (!sel.value) {
+        applyEmployeeSelection();
+        return;
+    }
+    applyEmployeeSelection({
+        code: sel.value,
+        id: opt.dataset.id || null,
+    });
+}
+
+function syncEmployeeFromCode(useApi = false) {
     const code = document.getElementById('employeeCode').value.trim();
     if (!code) {
+        applyEmployeeSelection();
+        return;
+    }
+    const sel = document.getElementById('employeeSelect');
+    const localOpt = [...sel.options].find(o => o.value === code);
+    if (localOpt) {
+        applyEmployeeSelection({
+            code,
+            id: localOpt.dataset.id || null,
+        });
+        return;
+    }
+    if (!useApi) {
+        syncEmployeeDropdown('');
         currentEmployeeId = null;
-        document.getElementById('employeeNameDisplay').textContent = '';
         return;
     }
     fetch(`/employees/lookup/?code=${encodeURIComponent(code)}`)
@@ -76,14 +120,37 @@ function loadEmployeeFromCode() {
         .then(data => {
             if (!data.success) {
                 alert(data.error || 'موظف غير موجود');
-                currentEmployeeId = null;
-                document.getElementById('employeeNameDisplay').textContent = '';
+                applyEmployeeSelection();
                 return;
             }
-            currentEmployeeId = data.employee.id;
-            document.getElementById('employeeNameDisplay').textContent = data.employee.name;
-        });
+            applyEmployeeSelection({
+                code: data.employee.code,
+                id: data.employee.id,
+            });
+        })
+        .catch(() => alert('خطأ في الاتصال'));
 }
+
+function loadEmployeeFromCode() {
+    syncEmployeeFromCode(true);
+}
+
+function getEmployeeCode() {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (code) return code;
+    return document.getElementById('employeeSelect').value.trim();
+}
+
+document.getElementById('employeeCode').addEventListener('input', function() {
+    syncEmployeeFromCode(false);
+});
+
+document.getElementById('employeeCode').addEventListener('blur', function() {
+    const code = document.getElementById('employeeCode').value.trim();
+    if (code && !currentEmployeeId) {
+        syncEmployeeFromCode(true);
+    }
+});
 
 document.getElementById('employeeCode').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); loadEmployeeFromCode(); }
@@ -139,6 +206,17 @@ function submitBooking() {
         return;
     }
 
+    const employeeCode = getEmployeeCode();
+    if (!employeeCode || !currentEmployeeId) {
+        alert('الموظف مطلوب — اختره من القائمة أو اكتب كوده الصحيح');
+        if (!employeeCode) document.getElementById('employeeSelect').focus();
+        else document.getElementById('employeeCode').focus();
+        return;
+    }
+    if (!document.getElementById('employeeCode').value.trim()) {
+        document.getElementById('employeeCode').value = employeeCode;
+    }
+
     fetch('/bookings/add/', {
         method: 'POST',
         headers: {
@@ -149,7 +227,7 @@ function submitBooking() {
             items: cart,
             customer_name: name,
             customer_phone: phone,
-            employee_code: document.getElementById('employeeCode').value.trim(),
+            employee_code: getEmployeeCode(),
             notes: document.getElementById('notes').value,
         }),
     })
@@ -163,9 +241,7 @@ function submitBooking() {
             document.getElementById('customerName').value = '';
             document.getElementById('customerPhone').value = '';
             document.getElementById('notes').value = '';
-            document.getElementById('employeeCode').value = '';
-            document.getElementById('employeeNameDisplay').textContent = '';
-            currentEmployeeId = null;
+            applyEmployeeSelection();
         } else {
             alert(data.error || 'فشل الحفظ');
         }

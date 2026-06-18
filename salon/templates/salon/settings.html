@@ -203,27 +203,6 @@
         </div>
     </div>
 
-    <!-- Employees Management -->
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
-                <h5 class="fw-bold">👔 إدارة الموظفين</h5>
-                {% if request.user.is_superuser or request.user.can_employees %}
-                <a href="/employees/add/" class="btn btn-sm btn-success">+ تكويد موظف</a>
-                {% endif %}
-            </div>
-            <div class="card-body px-4 py-3">
-                <p class="text-muted mb-2 small">كوّد الموظفين هنا — يُستخدم الكود في نقطة البيع وحجز VIP والتقارير.</p>
-                {% if request.user.is_superuser or request.user.can_employees %}
-                <a href="/employees/" class="btn btn-outline-success btn-sm me-2">قائمة الموظفين</a>
-                <a href="/employees/add/" class="btn btn-outline-secondary btn-sm">تكويد موظف</a>
-                {% else %}
-                <span class="text-muted small">ليس لديك صلاحية إدارة الموظفين</span>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
     <!-- Users Management -->
     <div class="col-md-12">
         <div class="card">
