@@ -16,12 +16,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='user',
             name='can_bookings',
-            field=models.BooleanField(default=True, verbose_name='Can Access Bookings'),
+            field=models.BooleanField(default=False, verbose_name='Can Access Bookings'),
         ),
         migrations.AddField(
             model_name='user',
             name='can_customers',
-            field=models.BooleanField(default=True, verbose_name='Can Access Customers'),
+            field=models.BooleanField(default=False, verbose_name='Can Access Customers'),
         ),
         migrations.AddField(
             model_name='user',

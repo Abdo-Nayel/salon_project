@@ -38,6 +38,7 @@ class Migration(migrations.Migration):
                 related_name='movements',
                 to='salon.purchaseinvoice',
                 verbose_name='فاتورة مشتريات',
+                db_column='reference_invoice_id',
             ),
         ),
         migrations.RunPython(backfill_movement_serials, migrations.RunPython.noop),
