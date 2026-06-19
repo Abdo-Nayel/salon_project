@@ -25,7 +25,6 @@ import requests
 from django.views.decorators.csrf import csrf_exempt
 
 
-from django_weasyprint import WeasyTemplateView
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from weasyprint import HTML, CSS
