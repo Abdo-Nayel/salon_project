@@ -60,6 +60,7 @@ urlpatterns = [
     # Reports
     path('reports/', views.reports, name='reports'),
     path('reports/pdf/', views.reports_pdf, name='reports_pdf'),
+    path('reports/activity-log/', views.activity_log, name='activity_log'),
 
     # Services
     path('services/', views.service_list, name='service_list'),

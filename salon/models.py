@@ -978,3 +978,53 @@ class StockMovement(models.Model):
             elif self.movement_type == 'out':
                 self.product.stock -= self.quantity
             self.product.save()
+
+
+# =============================================================================
+# ACTIVITY LOG (سجل الحركات)
+# =============================================================================
+
+class ActivityLog(models.Model):
+    ACTION_CREATE = 'create'
+    ACTION_UPDATE = 'update'
+    ACTION_DELETE = 'delete'
+    ACTION_VOID = 'void'
+
+    ACTION_CHOICES = [
+        (ACTION_CREATE, 'إنشاء'),
+        (ACTION_UPDATE, 'تعديل'),
+        (ACTION_DELETE, 'حذف'),
+        (ACTION_VOID, 'إلغاء'),
+    ]
+
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='activity_logs', verbose_name='المستخدم',
+    )
+    branch = models.ForeignKey(
+        Branch, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='activity_logs', verbose_name='الفرع',
+    )
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES, verbose_name='العملية')
+    entity_type = models.CharField(max_length=50, verbose_name='النوع')
+    entity_id = models.PositiveIntegerField(null=True, blank=True, verbose_name='المعرف')
+    entity_label = models.CharField(max_length=255, verbose_name='الوصف')
+    details = models.TextField(blank=True, default='', verbose_name='تفاصيل')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='الوقت')
+
+    class Meta:
+        verbose_name = 'سجل حركة'
+        verbose_name_plural = 'سجل الحركات'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.get_action_display()} — {self.entity_type}: {self.entity_label}'
+
+    @property
+    def action_badge_class(self):
+        return {
+            self.ACTION_CREATE: 'success',
+            self.ACTION_UPDATE: 'primary',
+            self.ACTION_DELETE: 'danger',
+            self.ACTION_VOID: 'warning',
+        }.get(self.action, 'secondary')

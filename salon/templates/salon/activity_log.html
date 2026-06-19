@@ -1,0 +1,117 @@
+{% extends "salon/simple_base.html" %}
+{% load humanize %}
+{% block title %}سجل الحركات - LyomasTech{% endblock %}
+{% block page_title %}سجل الحركات{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-body">
+        <p class="text-muted mb-3">
+            يعرض كل عمليات الإنشاء والتعديل والحذف والإلغاء على البيانات.
+            الافتراضي: حركات <strong>اليوم</strong>.
+        </p>
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">من تاريخ</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">إلى تاريخ</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i> عرض
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-success">
+            <div class="card-body text-center">
+                <div class="text-muted small">إنشاء</div>
+                <div class="fs-4 fw-bold text-success">{{ counts.create }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-primary">
+            <div class="card-body text-center">
+                <div class="text-muted small">تعديل</div>
+                <div class="fs-4 fw-bold text-primary">{{ counts.update }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-danger">
+            <div class="card-body text-center">
+                <div class="text-muted small">حذف</div>
+                <div class="fs-4 fw-bold text-danger">{{ counts.delete }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-warning">
+            <div class="card-body text-center">
+                <div class="text-muted small">إلغاء</div>
+                <div class="fs-4 fw-bold text-warning">{{ counts.void }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>الحركات ({{ total_count }})</strong>
+        <span class="text-muted small">{{ start_date }} — {{ end_date }}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>الوقت</th>
+                        <th>المستخدم</th>
+                        <th>العملية</th>
+                        <th>النوع</th>
+                        <th>الوصف</th>
+                        {% if is_superuser %}<th>الفرع</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td class="text-nowrap">{{ log.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>{{ log.user.get_full_name|default:log.user.username|default:"—" }}</td>
+                        <td>
+                            <span class="badge bg-{{ log.action_badge_class }}">
+                                {{ log.get_action_display }}
+                            </span>
+                        </td>
+                        <td>{{ log.entity_type }}</td>
+                        <td>
+                            {{ log.entity_label }}
+                            {% if log.details %}
+                            <div class="small text-muted">{{ log.details }}</div>
+                            {% endif %}
+                        </td>
+                        {% if is_superuser %}
+                        <td>{{ log.branch.name|default:"—" }}</td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if is_superuser %}6{% else %}5{% endif %}" class="text-center text-muted py-5">
+                            لا توجد حركات في هذه الفترة
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

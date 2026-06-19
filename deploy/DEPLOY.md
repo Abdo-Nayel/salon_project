@@ -24,7 +24,7 @@
 ## توليد ملفات جاهزة (اختياري — من جهاز التطوير)
 
 ```bash
-bash deploy/new-client.sh sweb Sweb 'StrongDbPassword123'
+bash deploy/new-client.sh sweb Sweb 'Lyo@22999'
 ```
 
 ينشئ مجلد `deploy/generated/sweb/` يحتوي:
@@ -61,7 +61,7 @@ sudo -u postgres psql
 ```
 
 ```sql
-CREATE USER sweb_user WITH PASSWORD 'StrongDbPassword123';
+CREATE USER sweb_user WITH PASSWORD 'Lyo@22999';
 CREATE DATABASE swebdb OWNER sweb_user;
 GRANT ALL PRIVILEGES ON DATABASE swebdb TO sweb_user;
 \q
@@ -109,7 +109,7 @@ DJANGO_CSRF_COOKIE_SECURE=True
 
 DB_NAME=swebdb
 DB_USER=sweb_user
-DB_PASSWORD=StrongDbPassword123
+DB_PASSWORD=Lyo@22999
 DB_HOST=127.0.0.1
 DB_PORT=5432
 

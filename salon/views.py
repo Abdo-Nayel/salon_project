@@ -37,9 +37,15 @@ from .models import (
     PurchaseInvoice, PurchaseInvoiceItem,
     ConsumptionInvoice, ConsumptionInvoiceItem,
     ExpenseType, ExpenseVoucher,
-    SalonSettings, Employee,
+    SalonSettings, Employee, ActivityLog,
 )
 from .backup_utils import create_backup_sql, restore_backup_sql, latest_backup_info
+from .audit_utils import (
+    log_activity, ACTION_CREATE, ACTION_UPDATE, ACTION_DELETE, ACTION_VOID,
+    T_INVOICE, T_BOOKING, T_PRODUCT, T_PURCHASE, T_CONSUMPTION,
+    T_EXPENSE_TYPE, T_EXPENSE_VOUCHER, T_SERVICE, T_CUSTOMER, T_EMPLOYEE,
+    T_USER, T_STOCK, T_SETTINGS, T_BACKUP,
+)
 from .forms import (
     LoginForm, UserForm, ServiceForm, ProductForm,
     BankForm, CustomerForm, BookingForm, ExpenseForm, StockMovementForm
@@ -380,6 +386,15 @@ def pos(request):
                         b.started_at = timezone.now()
                     b.save(update_fields=['status', 'completed_at', 'started_at'])
 
+            log_activity(
+                request,
+                ACTION_UPDATE if invoice_id else ACTION_CREATE,
+                T_INVOICE,
+                f'#{invoice.display_number()} — {invoice.final_total} ج.م',
+                invoice.id,
+                invoice.branch,
+            )
+
             return JsonResponse({
                 'success': True,
                 'message': '✅ تم الحفظ بنجاح!',
@@ -524,6 +539,10 @@ def pos_void_invoice(request, pk):
         invoice.customer.save()
     invoice.is_voided = True
     invoice.save(update_fields=['is_voided'])
+    log_activity(
+        request, ACTION_VOID, T_INVOICE,
+        f'#{invoice.display_number()}', invoice.id, invoice.branch,
+    )
     return JsonResponse({'success': True, 'message': f'تم إلغاء الفاتورة #{invoice.display_number()}'})
 # =============================================================================
 # INVOICE PRINT
@@ -604,6 +623,12 @@ def booking_add(request):
             service_ids = [item['id'] for item in items]
             booking.services.set(Service.objects.filter(id__in=service_ids))
 
+            log_activity(
+                request, ACTION_CREATE, T_BOOKING,
+                f'VIP رقم {queue_number} — {customer_name}',
+                booking.id, branch,
+            )
+
             return JsonResponse({
                 'success': True,
                 'message': f'تم حجز VIP رقم {queue_number}',
@@ -636,6 +661,17 @@ def booking_status(request, pk):
         booking.status = 'cancelled'
 
     booking.save()
+    status_labels = {
+        'in_progress': 'بدء التنفيذ',
+        'completed': 'إكمال',
+        'cancelled': 'إلغاء',
+    }
+    if status in status_labels:
+        log_activity(
+            request, ACTION_UPDATE, T_BOOKING,
+            f'{booking.customer_name} — {status_labels[status]}',
+            booking.id, booking.branch,
+        )
     return JsonResponse({'success': True})
 
 
@@ -894,7 +930,9 @@ def inventory_item_add(request):
                 ok, msg = product.can_delete_catalog()
                 if not ok:
                     return JsonResponse({'success': False, 'error': msg})
+                label = f'{product.code} — {product.name}'
                 product.delete()
+                log_activity(request, ACTION_DELETE, T_PRODUCT, label, product_id, branch)
                 return JsonResponse({
                     'success': True,
                     'message': 'تم حذف الصنف',
@@ -908,6 +946,10 @@ def inventory_item_add(request):
                 product = Product.objects.get(id=product_id, branch=branch)
                 product.name = name
                 product.save(update_fields=['name'])
+                log_activity(
+                    request, ACTION_UPDATE, T_PRODUCT,
+                    f'{product.code} — {name}', product.id, branch,
+                )
                 return JsonResponse({'success': True, 'message': 'تم تحديث الصنف'})
 
             if not code:
@@ -919,6 +961,7 @@ def inventory_item_add(request):
                 branch=branch, code=code, name=name,
                 price=0, cost=0, stock=0,
             )
+            log_activity(request, ACTION_CREATE, T_PRODUCT, f'{code} — {name}', None, branch)
             return JsonResponse({
                 'success': True,
                 'message': f'تم تكويد الصنف {name}',
@@ -993,6 +1036,14 @@ def inventory_purchase_add(request):
 
                 _apply_purchase_lines(purchase, items, branch, request.user)
 
+            log_activity(
+                request,
+                ACTION_UPDATE if purchase_id else ACTION_CREATE,
+                T_PURCHASE,
+                f'#{purchase.serial_number}',
+                purchase.id, branch,
+            )
+
             return JsonResponse({
                 'success': True,
                 'serial_number': purchase.serial_number,
@@ -1035,9 +1086,14 @@ def inventory_purchase_delete(request, pk):
         qs = qs.filter(branch=branch)
     purchase = get_object_or_404(qs)
     try:
+        serial = purchase.serial_number
         with transaction.atomic():
             purchase.reverse_stock()
             purchase.delete()
+        log_activity(
+            request, ACTION_DELETE, T_PURCHASE,
+            f'#{serial}', pk, branch or purchase.branch,
+        )
         return JsonResponse({
             'success': True,
             'message': 'تم حذف فاتورة المشتريات',
@@ -1083,6 +1139,14 @@ def inventory_consumption_add(request):
 
                 _apply_consumption_lines(consumption, items, branch, request.user)
 
+            log_activity(
+                request,
+                ACTION_UPDATE if consumption_id else ACTION_CREATE,
+                T_CONSUMPTION,
+                f'#{consumption.serial_number}',
+                consumption.id, branch,
+            )
+
             return JsonResponse({
                 'success': True,
                 'serial_number': consumption.serial_number,
@@ -1125,9 +1189,14 @@ def inventory_consumption_delete(request, pk):
         qs = qs.filter(branch=branch)
     consumption = get_object_or_404(qs)
     try:
+        serial = consumption.serial_number
         with transaction.atomic():
             consumption.reverse_stock()
             consumption.delete()
+        log_activity(
+            request, ACTION_DELETE, T_CONSUMPTION,
+            f'#{serial}', pk, branch or consumption.branch,
+        )
         return JsonResponse({'success': True, 'message': 'تم حذف حركة الاستهلاك'})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
@@ -1284,6 +1353,11 @@ def stock_movement_add(request):
             movement.branch = branch or Branch.objects.first()
             movement.created_by = request.user
             movement.save()
+            log_activity(
+                request, ACTION_CREATE, T_STOCK,
+                f'{movement.product.name} — {movement.get_movement_type_display()} {movement.quantity}',
+                movement.id, movement.branch,
+            )
             messages.success(request, "✅ تم تسجيل حركة المخزون بنجاح")
             return redirect('inventory')
     else:
@@ -1379,6 +1453,15 @@ def _save_expense_voucher(request, branch, voucher_type):
         voucher.save()
         msg = f'تم حفظ السند #{voucher.serial_number}'
 
+    log_activity(
+        request,
+        ACTION_UPDATE if voucher_id else ACTION_CREATE,
+        T_EXPENSE_VOUCHER,
+        f'#{voucher.serial_number} — {voucher.amount} ج.م',
+        voucher.id, branch,
+        details=voucher.expense_type.name,
+    )
+
     return JsonResponse({
         'success': True,
         'message': msg,
@@ -1431,7 +1514,9 @@ def expense_type_add(request):
                 ok, msg = expense_type.can_delete_catalog()
                 if not ok:
                     return JsonResponse({'success': False, 'error': msg})
+                label = f'{expense_type.code} — {expense_type.name}'
                 expense_type.delete()
+                log_activity(request, ACTION_DELETE, T_EXPENSE_TYPE, label, type_id, branch)
                 return JsonResponse({
                     'success': True,
                     'message': 'تم حذف المصروف',
@@ -1445,6 +1530,10 @@ def expense_type_add(request):
                 expense_type = ExpenseType.objects.get(id=type_id, branch=branch)
                 expense_type.name = name
                 expense_type.save(update_fields=['name'])
+                log_activity(
+                    request, ACTION_UPDATE, T_EXPENSE_TYPE,
+                    f'{expense_type.code} — {name}', expense_type.id, branch,
+                )
                 return JsonResponse({'success': True, 'message': 'تم تحديث المصروف'})
 
             if not code:
@@ -1453,6 +1542,7 @@ def expense_type_add(request):
                 return JsonResponse({'success': False, 'error': f'كود {code} موجود — اضغط Enter لتحميله'})
 
             ExpenseType.objects.create(branch=branch, code=code, name=name)
+            log_activity(request, ACTION_CREATE, T_EXPENSE_TYPE, f'{code} — {name}', None, branch)
             return JsonResponse({
                 'success': True,
                 'message': f'تم تكويد المصروف {name}',
@@ -1590,8 +1680,14 @@ def _expense_voucher_delete(request, pk, voucher_type):
     if branch:
         qs = qs.filter(branch=branch)
     voucher = get_object_or_404(qs)
+    serial = voucher.serial_number
+    branch = voucher.branch
     voucher.delete()
     label = 'مرتد المصروف' if voucher_type == 'return' else 'المصروف'
+    log_activity(
+        request, ACTION_DELETE, T_EXPENSE_VOUCHER,
+        f'{label} #{serial}', pk, branch,
+    )
     return JsonResponse({'success': True, 'message': f'تم حذف {label}'})
 
 
@@ -1816,6 +1912,44 @@ def reports(request):
     return render(request, 'salon/reports.html', context)
 
 
+@login_required
+def activity_log(request):
+    """سجل الحركات — إنشاء / تعديل / حذف / إلغاء."""
+    if not can_view_activity_log(request.user):
+        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+        return redirect('dashboard')
+
+    branch = get_user_branch(request)
+    today = timezone.localdate().isoformat()
+    start_date = request.GET.get('start_date') or today
+    end_date = request.GET.get('end_date') or today
+
+    logs = ActivityLog.objects.select_related('user', 'branch')
+    if not request.user.is_superuser:
+        if not branch:
+            messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
+            return redirect('dashboard')
+        logs = logs.filter(branch=branch)
+
+    logs = logs.filter(created_at__date__range=[start_date, end_date])
+
+    counts = {
+        'create': logs.filter(action=ActivityLog.ACTION_CREATE).count(),
+        'update': logs.filter(action=ActivityLog.ACTION_UPDATE).count(),
+        'delete': logs.filter(action=ActivityLog.ACTION_DELETE).count(),
+        'void': logs.filter(action=ActivityLog.ACTION_VOID).count(),
+    }
+
+    return render(request, 'salon/activity_log.html', {
+        'logs': logs[:500],
+        'start_date': start_date,
+        'end_date': end_date,
+        'counts': counts,
+        'total_count': logs.count(),
+        'is_superuser': request.user.is_superuser,
+    })
+
+
 # =============================================================================
 # SERVICES
 # =============================================================================
@@ -1850,7 +1984,9 @@ def service_add(request):
                 ok, msg = service.can_delete_catalog()
                 if not ok:
                     return JsonResponse({'success': False, 'error': msg})
+                label = f'{service.code} — {service.name}'
                 service.delete()
+                log_activity(request, ACTION_DELETE, T_SERVICE, label, service_id, None)
                 return JsonResponse({
                     'success': True,
                     'message': 'تم حذف الخدمة',
@@ -1868,6 +2004,10 @@ def service_add(request):
                 service.price = price
                 service.is_active = is_active
                 service.save(update_fields=['name', 'price', 'is_active'])
+                log_activity(
+                    request, ACTION_UPDATE, T_SERVICE,
+                    f'{service.code} — {name}', service.id, None,
+                )
                 return JsonResponse({'success': True, 'message': 'تم تحديث الخدمة'})
 
             if not code:
@@ -1879,6 +2019,7 @@ def service_add(request):
                 code=code, name=name, price=price,
                 is_active=is_active, cost=0, duration=30,
             )
+            log_activity(request, ACTION_CREATE, T_SERVICE, f'{code} — {name}', None, None)
             return JsonResponse({
                 'success': True,
                 'message': f'تم تكويد الخدمة {name}',
@@ -1955,7 +2096,9 @@ def employee_add(request):
                 ok, msg = employee.can_delete_catalog()
                 if not ok:
                     return JsonResponse({'success': False, 'error': msg})
+                label = f'{employee.serial_number} — {employee.name}'
                 employee.delete()
+                log_activity(request, ACTION_DELETE, T_EMPLOYEE, label, employee_id, employee.branch)
                 return JsonResponse({
                     'success': True,
                     'message': 'تم حذف الموظف',
@@ -1972,6 +2115,10 @@ def employee_add(request):
                 employee.name = name
                 employee.is_active = is_active
                 employee.save(update_fields=['name', 'is_active'])
+                log_activity(
+                    request, ACTION_UPDATE, T_EMPLOYEE,
+                    f'{employee.serial_number} — {name}', employee.id, employee.branch,
+                )
                 return JsonResponse({'success': True, 'message': 'تم تحديث الموظف'})
 
             if not code:
@@ -1989,6 +2136,7 @@ def employee_add(request):
                 is_active=is_active,
                 hire_date=timezone.localdate(),
             )
+            log_activity(request, ACTION_CREATE, T_EMPLOYEE, f'{code} — {name}', None, branch)
             return JsonResponse({
                 'success': True,
                 'message': f'تم تكويد الموظف {name}',
@@ -2047,6 +2195,10 @@ def product_add(request):
             product = form.save(commit=False)
             product.branch = branch or Branch.objects.first()
             product.save()
+            log_activity(
+                request, ACTION_CREATE, T_PRODUCT,
+                f'{product.code} — {product.name}', product.id, product.branch,
+            )
             messages.success(request, f"✅ تم إضافة المنتج {product.name} بنجاح")
             return redirect('product_list')
     else:
@@ -2079,6 +2231,10 @@ def customer_add(request):
             customer = form.save(commit=False)
             customer.branch = branch or Branch.objects.first()
             customer.save()
+            log_activity(
+                request, ACTION_CREATE, T_CUSTOMER,
+                f'{customer.name} — {customer.phone}', customer.id, customer.branch,
+            )
             messages.success(request, f"✅ تم إضافة العميل {customer.name} بنجاح")
             return redirect('customer_list')
     else:
@@ -2109,6 +2265,7 @@ def settings_view(request):
             if request.FILES.get('logo'):
                 salon_settings.logo = request.FILES['logo']
             salon_settings.save()
+            log_activity(request, ACTION_UPDATE, T_SETTINGS, salon_settings.salon_name)
             messages.success(request, "✅ تم حفظ إعدادات الصالون")
         elif form_type == 'restore':
             if not request.user.is_superuser:
@@ -2126,6 +2283,7 @@ def settings_view(request):
                 return redirect('settings')
             try:
                 restore_backup_sql(backup_file)
+                log_activity(request, ACTION_UPDATE, T_BACKUP, 'استعادة قاعدة البيانات')
                 messages.success(request, "✅ تمت استعادة قاعدة البيانات بنجاح")
             except Exception as e:
                 messages.error(request, f"❌ فشل الاستعادة: {e}")
@@ -2208,6 +2366,14 @@ def require_access(request, perm, redirect_to='dashboard'):
     return True
 
 
+def can_view_activity_log(user):
+    return (
+        user.is_superuser
+        or getattr(user, 'can_audit', False)
+        or getattr(user, 'can_reports', False)
+    )
+
+
 @login_required
 def user_list(request):
     if not check_user_permission(request):
@@ -2253,7 +2419,10 @@ def user_add(request):
                 ok, msg = user_obj.can_delete_account()
                 if not ok:
                     return JsonResponse({'success': False, 'error': msg})
+                uname = user_obj.username
+                ubranch = user_obj.branch
                 user_obj.delete()
+                log_activity(request, ACTION_DELETE, T_USER, uname, user_id, ubranch)
                 return JsonResponse({
                     'success': True,
                     'message': 'تم حذف المستخدم',
@@ -2270,6 +2439,10 @@ def user_add(request):
                 if not user_obj.is_superuser:
                     _apply_user_access(user_obj, data)
                 user_obj.save()
+                log_activity(
+                    request, ACTION_UPDATE, T_USER,
+                    user_obj.username, user_obj.id, user_obj.branch,
+                )
                 return JsonResponse({'success': True, 'message': 'تم تحديث المستخدم'})
 
             username = data.get('username', '').strip()
@@ -2306,6 +2479,10 @@ def user_add(request):
             _apply_user_access(user_obj, data)
             user_obj.set_password(password)
             user_obj.save()
+            log_activity(
+                request, ACTION_CREATE, T_USER,
+                username, user_obj.id, branch,
+            )
             return JsonResponse({
                 'success': True,
                 'message': f'تم تكويد المستخدم {username}',
@@ -2378,7 +2555,9 @@ def user_delete(request, pk):
     if not ok:
         return JsonResponse({'success': False, 'error': msg})
     username = user_obj.username
+    ubranch = user_obj.branch
     user_obj.delete()
+    log_activity(request, ACTION_DELETE, T_USER, username, pk, ubranch)
     return JsonResponse({'success': True, 'message': f'تم حذف المستخدم {username}'})
 
 # =============================================================================

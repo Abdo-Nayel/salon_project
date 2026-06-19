@@ -267,8 +267,9 @@
         <a href="/expenses/" class="{% if request.path == '/expenses/' %}active{% endif %}"><i class="fas fa-money-bill-wave"></i> <span>المصروفات</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_reports %}
+        {% if request.user.is_superuser or request.user.can_reports or request.user.can_audit %}
         <a href="/reports/" class="{% if request.path == '/reports/' %}active{% endif %}"><i class="fas fa-chart-line"></i> <span>التقارير</span></a>
+        <a href="/reports/activity-log/" class="{% if '/reports/activity-log' in request.path %}active{% endif %}"><i class="fas fa-clipboard-list"></i> <span>سجل الحركات</span></a>
         {% endif %}
         
         {% if request.user.is_superuser or request.user.can_services %}
