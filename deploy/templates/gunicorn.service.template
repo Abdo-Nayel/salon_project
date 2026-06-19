@@ -1,0 +1,17 @@
+[Unit]
+Description=Gunicorn {{CLIENT_SLUG}} LyomasTech
+After=network.target
+
+[Service]
+User=softwarehouse
+Group=softwarehouse
+WorkingDirectory=/var/www/{{CLIENT_SLUG}}
+Environment="PATH=/var/www/{{CLIENT_SLUG}}/.venv/bin"
+ExecStart=/var/www/{{CLIENT_SLUG}}/.venv/bin/gunicorn \
+    --workers 3 \
+    --bind unix:/var/www/{{CLIENT_SLUG}}/gunicorn.sock \
+    salon_project_pkg.wsgi:application
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
