@@ -9,12 +9,16 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="fw-bold m-0">📅 الحجوزات</h3>
     <div class="d-flex gap-2">
+        {% if user_permissions.can_booking_queue %}
         <button onclick="printQueueNumber()" class="btn btn-info text-white fw-semibold">
             <i class="fas fa-ticket-alt me-1"></i> طباعة رقم دور
         </button>
+        {% endif %}
+        {% if user_permissions.can_booking_vip %}
         <a href="/bookings/add/" class="btn btn-warning fw-semibold text-dark">
             <i class="fas fa-star me-1"></i> حجز VIP
         </a>
+        {% endif %}
     </div>
 </div>
 

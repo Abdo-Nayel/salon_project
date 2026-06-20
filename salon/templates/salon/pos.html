@@ -9,12 +9,9 @@
             {% for service in services %}
             <div class="col-md-4 col-lg-3 product-item">
                 <div class="card h-100 cursor-pointer" onclick="addToCart({{ service.id }}, '{{ service.name }}', {{ service.price }})">
-                    <div class="card-body text-center">
-                        <div class="bg-light rounded-3 mb-2" style="height:80px;display:flex;align-items:center;justify-content:center;font-size:2rem;">
-                            ✂️
-                        </div>
-                        <h6 class="fw-bold mb-1">{{ service.name }}</h6>
-                        <p class="text-primary fw-bold mb-0">{{ service.price }} ج</p>
+                    <div class="card-body text-center py-4">
+                        <h6 class="fw-bold mb-2">{{ service.name }}</h6>
+                        <p class="text-primary fw-bold mb-0 fs-5">{{ service.price }} ج</p>
                     </div>
                 </div>
             </div>
@@ -95,6 +92,7 @@
                     <input type="number" id="discountAmount" class="form-control" placeholder="الخصم (جنية)" onchange="calculateTotal()">
                 </div>
 
+                {% if user_permissions.can_delete_pos %}
                 <div id="recallActions" class="mb-3 d-none">
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-danger flex-fill" id="btnVoid" onclick="voidInvoice()">
@@ -105,6 +103,15 @@
                         </button>
                     </div>
                 </div>
+                {% else %}
+                <div id="recallActions" class="mb-3 d-none">
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary flex-fill w-100" onclick="clearRecall()">
+                            <i class="fas fa-file me-1"></i> جديد
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
 
                 <button class="btn btn-success w-100 btn-lg" id="btnSubmit" onclick="submitInvoice()">
                     <i class="fas fa-check me-2"></i> <span id="submitLabel">إتمام البيع</span>

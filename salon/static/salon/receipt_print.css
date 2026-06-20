@@ -30,10 +30,10 @@ body {
 
 .shop-logo {
     display: block;
-    max-width: 62mm;
-    max-height: 28mm;
+    max-width: 72mm;
+    max-height: 44mm;
     object-fit: contain;
-    margin: 0 auto 3mm;
+    margin: 0 auto 5mm;
 }
 
 .shop-name {

@@ -251,41 +251,45 @@
         
         <a href="/" class="{% if request.path == '/' %}active{% endif %}"><i class="fas fa-home"></i> <span>الرئيسية</span></a>
         
-        {% if request.user.is_superuser or request.user.can_pos %}
+        {% if request.user.is_superuser or user_permissions.menu_pos %}
         <a href="/pos/" class="{% if request.path == '/pos/' %}active{% endif %}"><i class="fas fa-cash-register"></i> <span>نقطة البيع</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_bookings %}
+        {% if request.user.is_superuser or user_permissions.menu_bookings %}
         <a href="/bookings/" class="{% if request.path == '/bookings/' %}active{% endif %}"><i class="fas fa-calendar-check"></i> <span>الحجوزات</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_inventory %}
+        {% if request.user.is_superuser or user_permissions.menu_inventory %}
         <a href="/inventory/" class="{% if request.path == '/inventory/' %}active{% endif %}"><i class="fas fa-boxes"></i> <span>المخزن</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_expenses %}
+        {% if request.user.is_superuser or user_permissions.menu_expenses %}
         <a href="/expenses/" class="{% if request.path == '/expenses/' %}active{% endif %}"><i class="fas fa-money-bill-wave"></i> <span>المصروفات</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_reports or request.user.can_audit %}
+        {% if request.user.is_superuser or user_permissions.menu_reports %}
         <a href="/reports/" class="{% if request.path == '/reports/' %}active{% endif %}"><i class="fas fa-chart-line"></i> <span>التقارير</span></a>
+        {% endif %}
+        {% if request.user.is_superuser or user_permissions.can_report_activity %}
         <a href="/reports/activity-log/" class="{% if '/reports/activity-log' in request.path %}active{% endif %}"><i class="fas fa-clipboard-list"></i> <span>سجل الحركات</span></a>
+        {% endif %}
+        {% if request.user.is_superuser or user_permissions.can_report_statement %}
         <a href="/reports/account-statement/" class="{% if '/reports/account-statement' in request.path %}active{% endif %}"><i class="fas fa-file-invoice-dollar"></i> <span>كشف الحسابات</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_services %}
-        <a href="/services/" class="{% if request.path == '/services/' %}active{% endif %}"><i class="fas fa-cut"></i> <span>الخدمات</span></a>
+        {% if request.user.is_superuser or user_permissions.menu_services %}
+        <a href="/services/" class="{% if request.path == '/services/' %}active{% endif %}"><i class="fas fa-list"></i> <span>الخدمات</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_customers %}
+        {% if request.user.is_superuser or user_permissions.menu_customers %}
         <a href="/customers/" class="{% if request.path == '/customers/' %}active{% endif %}"><i class="fas fa-users"></i> <span>العملاء</span></a>
         {% endif %}
 
-        {% if request.user.is_superuser or request.user.can_employees %}
+        {% if request.user.is_superuser or user_permissions.menu_employees %}
         <a href="/employees/" class="{% if '/employees' in request.path %}active{% endif %}"><i class="fas fa-id-badge"></i> <span>الموظفين</span></a>
         {% endif %}
         
-        {% if request.user.is_superuser or request.user.can_settings %}
+        {% if request.user.is_superuser or user_permissions.menu_settings %}
         <a href="/settings/" class="{% if request.path == '/settings/' %}active{% endif %}"><i class="fas fa-cog"></i> <span>الإعدادات</span></a>
         {% endif %}
         

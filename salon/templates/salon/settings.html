@@ -36,22 +36,6 @@
                         <label class="form-label fw-bold">العنوان</label>
                         <textarea class="form-control" name="address" rows="2">{{ settings.address|default:"" }}</textarea>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">العملة</label>
-                        <select class="form-select" name="currency">
-                            <option value="EGP" {% if settings.currency == 'EGP' %}selected{% endif %}>🇪🇬 جنيه مصري</option>
-                            <option value="SAR" {% if settings.currency == 'SAR' %}selected{% endif %}>🇸🇦 ريال سعودي</option>
-                            <option value="AED" {% if settings.currency == 'AED' %}selected{% endif %}>🇦🇪 درهم إماراتي</option>
-                            <option value="USD" {% if settings.currency == 'USD' %}selected{% endif %}>🇺🇸 دولار أمريكي</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" name="auto_backup" id="autoBackup" {% if settings.auto_backup %}checked{% endif %}>
-                            <label class="form-check-label fw-bold" for="autoBackup">تحميل نسخة SQL تلقائياً عند فتح الإعدادات</label>
-                        </div>
-                        <small class="text-muted">يُحمّل الملف إلى مجلد Downloads في المتصفح</small>
-                    </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save me-2"></i> حفظ الإعدادات
                     </button>
@@ -318,14 +302,5 @@ async function downloadBackup() {
 }
 
 document.getElementById('btnBackupDownload').addEventListener('click', downloadBackup);
-
-{% if settings.auto_backup %}
-(function autoBackupOncePerDay() {
-    const today = new Date().toDateString();
-    if (localStorage.getItem('lastAutoBackupDate') !== today) {
-        setTimeout(downloadBackup, 800);
-    }
-})();
-{% endif %}
 </script>
 {% endblock %}

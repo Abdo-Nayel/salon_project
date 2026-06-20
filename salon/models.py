@@ -87,11 +87,11 @@ class User(AbstractUser):
         verbose_name="Commission %"
     )
 
-    # Permissions
-    can_pos = models.BooleanField(default=True, verbose_name="Can Access POS")
-    can_inventory = models.BooleanField(default=True, verbose_name="Can Access Inventory")
-    can_expenses = models.BooleanField(default=True, verbose_name="Can Access Expenses")
-    can_reports = models.BooleanField(default=True, verbose_name="Can Access Reports")
+    # Permissions — الكل false افتراضياً للمستخدمين الجدد
+    can_pos = models.BooleanField(default=False, verbose_name="Can Access POS")
+    can_inventory = models.BooleanField(default=False, verbose_name="Can Access Inventory")
+    can_expenses = models.BooleanField(default=False, verbose_name="Can Access Expenses")
+    can_reports = models.BooleanField(default=False, verbose_name="Can Access Reports")
     can_settings = models.BooleanField(default=False, verbose_name="Can Access Settings")
     can_users = models.BooleanField(default=False, verbose_name="Can Manage Users")
     can_audit = models.BooleanField(default=False, verbose_name="Can Access Audit")
@@ -104,6 +104,27 @@ class User(AbstractUser):
     can_delete_expenses = models.BooleanField(default=False, verbose_name="Can Delete Expenses")
     can_delete_inventory = models.BooleanField(default=False, verbose_name="Can Delete Inventory")
     can_delete_employees = models.BooleanField(default=False, verbose_name="Can Delete Employees")
+    can_delete_services = models.BooleanField(default=False, verbose_name="Can Delete Services")
+
+    # Sub-permissions — expenses
+    can_expense_types = models.BooleanField(default=False, verbose_name="Expense Types")
+    can_expense_out = models.BooleanField(default=False, verbose_name="Expense Out")
+    can_expense_return = models.BooleanField(default=False, verbose_name="Expense Return")
+
+    # Sub-permissions — inventory
+    can_inv_items = models.BooleanField(default=False, verbose_name="Inventory Items")
+    can_inv_purchase = models.BooleanField(default=False, verbose_name="Inventory Purchase")
+    can_inv_consumption = models.BooleanField(default=False, verbose_name="Inventory Consumption")
+    can_inv_report = models.BooleanField(default=False, verbose_name="Inventory Report")
+    can_inv_totals = models.BooleanField(default=False, verbose_name="Inventory Totals")
+
+    # Sub-permissions — reports
+    can_report_activity = models.BooleanField(default=False, verbose_name="Activity Log")
+    can_report_statement = models.BooleanField(default=False, verbose_name="Account Statement")
+
+    # Sub-permissions — bookings
+    can_booking_vip = models.BooleanField(default=False, verbose_name="VIP Booking")
+    can_booking_queue = models.BooleanField(default=False, verbose_name="Queue Number")
 
     class Meta:
         verbose_name = "User"

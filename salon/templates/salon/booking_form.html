@@ -9,10 +9,9 @@
             {% for service in services %}
             <div class="col-md-4 col-lg-3">
                 <div class="card h-100 cursor-pointer" onclick="addToCart({{ service.id }}, '{{ service.name|escapejs }}', {{ service.price }})">
-                    <div class="card-body text-center">
-                        <div class="bg-light rounded-3 mb-2" style="height:80px;display:flex;align-items:center;justify-content:center;font-size:2rem;">⭐</div>
-                        <h6 class="fw-bold mb-1">{{ service.name }}</h6>
-                        <p class="text-primary fw-bold mb-0">{{ service.price }} ج</p>
+                    <div class="card-body text-center py-4">
+                        <h6 class="fw-bold mb-2">{{ service.name }}</h6>
+                        <p class="text-primary fw-bold mb-0 fs-5">{{ service.price }} ج</p>
                     </div>
                 </div>
             </div>

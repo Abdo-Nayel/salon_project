@@ -46,6 +46,10 @@ from .audit_utils import (
     T_EXPENSE_TYPE, T_EXPENSE_VOUCHER, T_SERVICE, T_CUSTOMER, T_EMPLOYEE,
     T_USER, T_STOCK, T_SETTINGS, T_BACKUP, T_ACCOUNT_TRANSFER,
 )
+from .permissions import (
+    PERMISSION_GROUPS, apply_user_permissions, has_perm, permissions_dict,
+    user_permissions_payload,
+)
 from .statement_utils import (
     build_bank_statement, build_cash_statement, build_transfer_statement,
     get_active_banks, get_statement_branch,
@@ -529,6 +533,8 @@ def _invoice_payload(invoice):
 @require_POST
 def pos_void_invoice(request, pk):
     """إلغاء فاتورة — خلال اليوم فقط."""
+    if not require_access_json(request, 'can_delete_pos'):
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
     branch = get_user_branch(request)
     qs = Invoice.objects.filter(pk=pk, is_voided=False)
     if branch:
@@ -564,7 +570,11 @@ def invoice_print(request, pk):
 
 @login_required
 def booking_list(request):
-    if not require_access(request, 'can_bookings'):
+    if not (
+        has_perm(request.user, 'can_bookings')
+        or has_perm(request.user, 'can_booking_vip')
+        or has_perm(request.user, 'can_booking_queue')
+    ):
         return redirect('dashboard')
     bookings = get_branch_queryset(request, Booking, 'queue_number')
     return render(request, 'salon/booking_list.html', {'bookings': bookings})
@@ -572,7 +582,7 @@ def booking_list(request):
 
 @login_required
 def booking_add(request):
-    if not require_access(request, 'can_bookings'):
+    if not require_access(request, 'can_booking_vip'):
         return redirect('dashboard')
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
     if not branch:
@@ -684,6 +694,8 @@ def booking_status(request, pk):
 @require_POST
 def print_queue_number(request):
     """Generate and print a new queue number without booking data"""
+    if not require_access_json(request, 'can_booking_queue'):
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
     branch = get_user_branch(request)
     if not branch:
         branch = Branch.objects.filter(is_active=True).first()
@@ -900,8 +912,7 @@ def _purchase_payload(purchase):
 
 @login_required
 def inventory(request):
-    if not request.user.can_inventory:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+    if not require_access(request, 'can_inventory'):
         return redirect('dashboard')
 
     products = get_branch_queryset(request, Product, 'name')
@@ -918,8 +929,7 @@ def inventory(request):
 @login_required
 def inventory_item_add(request):
     """تكويد صنف — كود تلقائي + استرجاع بالكود."""
-    if not request.user.can_inventory:
-        messages.error(request, "ليس لديك صلاحية الوصول")
+    if not require_access(request, 'can_inv_items'):
         return redirect('dashboard')
 
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
@@ -936,6 +946,8 @@ def inventory_item_add(request):
             name = data.get('name', '').strip()
 
             if action == 'delete':
+                if not require_access_json(request, 'can_delete_inventory'):
+                    return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
                 if not product_id:
                     return JsonResponse({'success': False, 'error': 'اختر صنفاً أولاً'})
                 product = Product.objects.get(id=product_id, branch=branch)
@@ -997,6 +1009,8 @@ def inventory_item_lookup(request):
     if not product:
         return JsonResponse({'success': False, 'error': 'صنف غير موجود'})
     can_del, del_msg = product.can_delete_catalog()
+    if not has_perm(request.user, 'can_delete_inventory'):
+        can_del, del_msg = False, 'ليس لديك صلاحية الحذف'
     return JsonResponse({
         'success': True,
         'product': {
@@ -1013,8 +1027,7 @@ def inventory_item_lookup(request):
 @login_required
 def inventory_purchase_add(request):
     """فاتورة مشتريات مخزن — عدة أصناف."""
-    if not request.user.can_inventory:
-        messages.error(request, "ليس لديك صلاحية الوصول")
+    if not require_access(request, 'can_inv_purchase'):
         return redirect('dashboard')
 
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
@@ -1090,8 +1103,8 @@ def inventory_purchase_lookup(request):
 @login_required
 @require_POST
 def inventory_purchase_delete(request, pk):
-    if not request.user.can_inventory:
-        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
+    if not require_access_json(request, 'can_delete_inventory'):
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
     branch = get_user_branch(request)
     qs = PurchaseInvoice.objects.filter(pk=pk)
     if branch:
@@ -1117,7 +1130,7 @@ def inventory_purchase_delete(request, pk):
 @login_required
 def inventory_consumption_add(request):
     """أصناف مستهلكة — تقليل المخزون."""
-    if not request.user.can_inventory:
+    if not require_access(request, 'can_inv_consumption'):
         return redirect('dashboard')
 
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
@@ -1193,8 +1206,8 @@ def inventory_consumption_lookup(request):
 @login_required
 @require_POST
 def inventory_consumption_delete(request, pk):
-    if not request.user.can_inventory:
-        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
+    if not require_access_json(request, 'can_delete_inventory'):
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
     branch = get_user_branch(request)
     qs = ConsumptionInvoice.objects.filter(pk=pk)
     if branch:
@@ -1217,7 +1230,7 @@ def inventory_consumption_delete(request, pk):
 @login_required
 def inventory_report(request):
     """تقرير المشتريات والاستهلاك."""
-    if not request.user.can_inventory:
+    if not require_access(request, 'can_inv_report'):
         return redirect('dashboard')
 
     branch = get_user_branch(request)
@@ -1228,7 +1241,7 @@ def inventory_report(request):
 
 @login_required
 def inventory_report_pdf(request):
-    if not request.user.can_inventory:
+    if not require_access(request, 'can_inv_report'):
         return redirect('dashboard')
     branch = get_user_branch(request)
     ctx = _inventory_report_context(branch)
@@ -1241,7 +1254,7 @@ def inventory_report_pdf(request):
 
 @login_required
 def inventory_purchase_detail(request, pk):
-    if not request.user.can_inventory:
+    if not require_access(request, 'can_inv_purchase'):
         return redirect('dashboard')
     branch = get_user_branch(request)
     qs = PurchaseInvoice.objects.prefetch_related('items__product')
@@ -1258,7 +1271,7 @@ def inventory_purchase_detail(request, pk):
 @login_required
 def inventory_totals(request):
     """صافي إجماليات المخزون."""
-    if not request.user.can_inventory:
+    if not require_access(request, 'can_inv_totals'):
         return redirect('dashboard')
 
     branch = get_user_branch(request)
@@ -1308,7 +1321,7 @@ def inventory_totals(request):
 
 @login_required
 def inventory_totals_pdf(request):
-    if not request.user.can_inventory:
+    if not require_access(request, 'can_inv_totals'):
         return redirect('dashboard')
     branch = get_user_branch(request)
     products = Product.objects.filter(is_active=True)
@@ -1485,8 +1498,7 @@ def _save_expense_voucher(request, branch, voucher_type):
 
 @login_required
 def expense_list(request):
-    if not request.user.can_expenses:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
+    if not require_access(request, 'can_expenses'):
         return redirect('dashboard')
 
     branch = get_user_branch(request)
@@ -1503,7 +1515,7 @@ def expense_list(request):
 @login_required
 def expense_type_add(request):
     """تكويد مصروف — كود تلقائي + اسم."""
-    if not request.user.can_expenses:
+    if not require_access(request, 'can_expense_types'):
         return redirect('dashboard')
 
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
@@ -1520,6 +1532,8 @@ def expense_type_add(request):
             name = data.get('name', '').strip()
 
             if action == 'delete':
+                if not require_access_json(request, 'can_delete_expenses'):
+                    return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
                 if not type_id:
                     return JsonResponse({'success': False, 'error': 'اختر مصروفاً أولاً'})
                 expense_type = ExpenseType.objects.get(id=type_id, branch=branch)
@@ -1578,6 +1592,8 @@ def expense_type_lookup(request):
     if not expense_type:
         return JsonResponse({'success': False, 'error': 'مصروف غير موجود'})
     can_del, del_msg = expense_type.can_delete_catalog()
+    if not has_perm(request.user, 'can_delete_expenses'):
+        can_del, del_msg = False, 'ليس لديك صلاحية الحذف'
     return JsonResponse({
         'success': True,
         'expense_type': {
@@ -1592,7 +1608,7 @@ def expense_type_lookup(request):
 
 @login_required
 def expense_out_add(request):
-    if not request.user.can_expenses:
+    if not require_access(request, 'can_expense_out'):
         return redirect('dashboard')
 
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
@@ -1622,7 +1638,7 @@ def expense_out_delete(request, pk):
 
 @login_required
 def expense_return_add(request):
-    if not request.user.can_expenses:
+    if not require_access(request, 'can_expense_return'):
         return redirect('dashboard')
 
     branch = get_user_branch(request) or Branch.objects.filter(is_active=True).first()
@@ -1683,8 +1699,8 @@ def _expense_voucher_lookup(request, voucher_type):
 
 
 def _expense_voucher_delete(request, pk, voucher_type):
-    if not request.user.can_expenses:
-        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية'})
+    if not require_access_json(request, 'can_delete_expenses'):
+        return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
     branch = get_user_branch(request)
     qs = ExpenseVoucher.objects.filter(pk=pk, voucher_type=voucher_type)
     if branch:
@@ -1963,7 +1979,7 @@ def activity_log(request):
 @login_required
 def account_statement(request):
     """كشف الحسابات — نقدية وبنوك."""
-    if not require_access(request, 'can_reports'):
+    if not require_access(request, 'can_report_statement'):
         return redirect('dashboard')
 
     branch = get_statement_branch(request)
@@ -2016,7 +2032,7 @@ def account_statement(request):
 @require_POST
 def account_transfer_save(request):
     """تحويل بين النقدية والبنك."""
-    if not require_access(request, 'can_reports'):
+    if not require_access_json(request, 'can_report_statement'):
         return JsonResponse({'success': False, 'error': 'غير مصرح'})
 
     try:
@@ -2107,6 +2123,8 @@ def service_add(request):
             is_active = bool(data.get('is_active', True))
 
             if action == 'delete':
+                if not require_access_json(request, 'can_delete_services'):
+                    return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
                 if not service_id:
                     return JsonResponse({'success': False, 'error': 'اختر خدمة أولاً'})
                 service = Service.objects.get(id=service_id)
@@ -2171,6 +2189,8 @@ def service_lookup(request):
     if not service:
         return JsonResponse({'success': False, 'error': 'خدمة غير موجودة'})
     can_del, del_msg = service.can_delete_catalog()
+    if not has_perm(request.user, 'can_delete_services'):
+        can_del, del_msg = False, 'ليس لديك صلاحية الحذف'
     return JsonResponse({
         'success': True,
         'service': {
@@ -2217,6 +2237,8 @@ def employee_add(request):
             is_active = bool(data.get('is_active', True))
 
             if action == 'delete':
+                if not require_access_json(request, 'can_delete_employees'):
+                    return JsonResponse({'success': False, 'error': 'ليس لديك صلاحية الحذف'})
                 if not employee_id:
                     return JsonResponse({'success': False, 'error': 'اختر موظفاً أولاً'})
                 employee = Employee.objects.get(id=employee_id)
@@ -2291,6 +2313,8 @@ def employee_lookup(request):
     if not employee:
         return JsonResponse({'success': False, 'error': 'موظف غير موجود'})
     can_del, del_msg = employee.can_delete_catalog()
+    if not has_perm(request.user, 'can_delete_employees'):
+        can_del, del_msg = False, 'ليس لديك صلاحية الحذف'
     return JsonResponse({
         'success': True,
         'employee': {
@@ -2390,8 +2414,6 @@ def settings_view(request):
             salon_settings.salon_name = request.POST.get('salon_name', '').strip() or 'صالون برو'
             salon_settings.phone = request.POST.get('phone', '').strip()
             salon_settings.address = request.POST.get('address', '').strip()
-            salon_settings.currency = request.POST.get('currency', 'EGP')
-            salon_settings.auto_backup = request.POST.get('auto_backup') == 'on'
             if request.FILES.get('logo'):
                 salon_settings.logo = request.FILES['logo']
             salon_settings.save()
@@ -2473,36 +2495,34 @@ def check_user_permission(request, target_user=None):
     return True
 
 
-USER_ACCESS_FIELDS = (
-    'can_pos', 'can_inventory', 'can_expenses', 'can_reports',
-    'can_settings', 'can_users', 'can_bookings', 'can_customers', 'can_services',
-    'can_employees', 'is_active',
-)
+USER_ACCESS_FIELDS = ()  # legacy — use permissions.apply_user_permissions
 
 
 def _apply_user_access(user, data):
-    for field in USER_ACCESS_FIELDS:
-        if field == 'is_active':
-            setattr(user, field, bool(data.get(field, True)))
-        else:
-            setattr(user, field, bool(data.get(field)))
+    apply_user_permissions(user, data)
+    if 'is_active' in data:
+        user.is_active = bool(data.get('is_active', True))
 
 
 def require_access(request, perm, redirect_to='dashboard'):
     if request.user.is_superuser:
         return True
-    if not getattr(request.user, perm, False):
+    if not has_perm(request.user, perm):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return False
     return True
 
 
+def require_access_json(request, perm):
+    if request.user.is_superuser:
+        return True
+    if not has_perm(request.user, perm):
+        return False
+    return True
+
+
 def can_view_activity_log(user):
-    return (
-        user.is_superuser
-        or getattr(user, 'can_audit', False)
-        or getattr(user, 'can_reports', False)
-    )
+    return user.is_superuser or has_perm(user, 'can_report_activity')
 
 
 @login_required
@@ -2625,6 +2645,7 @@ def user_add(request):
     return render(request, 'salon/user_form.html', {
         'branches': branches,
         'next_code': User.next_code(),
+        'permission_groups': PERMISSION_GROUPS,
     })
 
 
@@ -2641,31 +2662,22 @@ def user_lookup(request):
     if not check_user_permission(request, target_user=user_obj):
         return JsonResponse({'success': False, 'error': 'غير مصرح'})
     can_del, del_msg = user_obj.can_delete_account()
+    payload = user_permissions_payload(user_obj)
+    payload.update({
+        'id': user_obj.id,
+        'user_code': user_obj.user_code,
+        'username': user_obj.username,
+        'full_name': user_obj.get_full_name() or user_obj.username,
+        'first_name': user_obj.first_name,
+        'last_name': user_obj.last_name,
+        'branch_name': str(user_obj.branch) if user_obj.branch else '—',
+        'is_superuser': user_obj.is_superuser,
+        'can_delete': can_del,
+        'delete_message': del_msg,
+    })
     return JsonResponse({
         'success': True,
-        'user': {
-            'id': user_obj.id,
-            'user_code': user_obj.user_code,
-            'username': user_obj.username,
-            'full_name': user_obj.get_full_name() or user_obj.username,
-            'first_name': user_obj.first_name,
-            'last_name': user_obj.last_name,
-            'branch_name': str(user_obj.branch) if user_obj.branch else '—',
-            'is_superuser': user_obj.is_superuser,
-            'can_pos': user_obj.can_pos,
-            'can_inventory': user_obj.can_inventory,
-            'can_expenses': user_obj.can_expenses,
-            'can_reports': user_obj.can_reports,
-            'can_settings': user_obj.can_settings,
-            'can_users': user_obj.can_users,
-            'can_bookings': user_obj.can_bookings,
-            'can_customers': user_obj.can_customers,
-            'can_services': user_obj.can_services,
-            'can_employees': user_obj.can_employees,
-            'is_active': user_obj.is_active,
-            'can_delete': can_del,
-            'delete_message': del_msg,
-        },
+        'user': payload,
     })
 
 
