@@ -2506,6 +2506,10 @@ def _apply_user_access(user, data):
         user.is_active = bool(data.get('is_active', True))
 
 
+def _set_user_password(user, raw_password):
+    user.set_plain_password(raw_password)
+
+
 def require_access(request, perm, redirect_to='dashboard'):
     if request.user.is_superuser:
         return True
@@ -2588,7 +2592,7 @@ def user_add(request):
                     return JsonResponse({'success': False, 'error': 'غير مصرح'})
                 password = data.get('password', '').strip()
                 if password:
-                    user_obj.set_password(password)
+                    _set_user_password(user_obj, password)
                 if not user_obj.is_superuser:
                     _apply_user_access(user_obj, data)
                 user_obj.save()
@@ -2630,7 +2634,7 @@ def user_add(request):
                 branch=branch,
             )
             _apply_user_access(user_obj, data)
-            user_obj.set_password(password)
+            _set_user_password(user_obj, password)
             user_obj.save()
             log_activity(
                 request, ACTION_CREATE, T_USER,
@@ -2676,6 +2680,7 @@ def user_lookup(request):
         'is_superuser': user_obj.is_superuser,
         'can_delete': can_del,
         'delete_message': del_msg,
+        'seen_password': user_obj.seen_password or '',
     })
     return JsonResponse({
         'success': True,

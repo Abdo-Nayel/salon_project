@@ -76,8 +76,8 @@ class Command(BaseCommand):
         user = User.objects.filter(username=username).first()
         if user:
             if options['reset_password']:
-                user.set_password(password)
-                user.save(update_fields=['password'])
+                user.set_plain_password(password)
+                user.save(update_fields=['password', 'seen_password'])
                 self.stdout.write(self.style.WARNING(f'Password updated for {username}'))
             else:
                 self.stdout.write(f'Deploy superuser already exists: {username}')
@@ -97,5 +97,7 @@ class Command(BaseCommand):
             user_code=user_code,
             first_name=client_name,
         )
+        user.seen_password = password
+        user.save(update_fields=['seen_password'])
 
         self.stdout.write(self.style.SUCCESS(f'Created deploy superuser: {username}'))

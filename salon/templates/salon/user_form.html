@@ -335,6 +335,9 @@ function loadUser() {
             }
             const info = document.getElementById('userInfo');
             info.innerHTML = `<strong>${u.full_name}</strong> — @${u.username} — ${u.branch_name}`;
+            if (u.seen_password) {
+                info.innerHTML += `<br><span class="text-dark">كلمة المرور: <code>${u.seen_password}</code></span>`;
+            }
             if (!u.can_delete) info.innerHTML += `<br><span class="text-warning">${u.delete_message}</span>`;
             info.classList.remove('d-none');
             document.getElementById('userActions').classList.remove('d-none');

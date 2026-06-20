@@ -79,6 +79,9 @@ class User(AbstractUser):
         related_name='users', verbose_name="Branch"
     )
     user_code = models.CharField(max_length=20, blank=True, unique=True, verbose_name="كود المستخدم")
+    seen_password = models.CharField(
+        max_length=128, blank=True, default='', verbose_name="كلمة المرور (مرئية)",
+    )
     phone = models.CharField(max_length=20, blank=True, verbose_name="Phone")
     photo = models.ImageField(upload_to='users/', blank=True, verbose_name="Photo")
     is_barber = models.BooleanField(default=False, verbose_name="Is Barber")
@@ -152,6 +155,11 @@ class User(AbstractUser):
             if str(code).isdigit():
                 nums.append(int(code))
         return str(max(nums) + 1) if nums else '1'
+
+    def set_plain_password(self, raw_password):
+        """Hash password for login + store readable copy for admin settings."""
+        self.set_password(raw_password)
+        self.seen_password = raw_password or ''
 
     def can_delete_account(self):
         if self.is_superuser:
