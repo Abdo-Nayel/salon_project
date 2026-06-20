@@ -99,7 +99,7 @@
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-body p-4">
                 <div class="receipt-container text-center">
-                    <h2 class="receipt-title fw-bold">LyomasTech</h2>
+                    <h2 class="receipt-title fw-bold">{{ salon_display_name }}</h2>
                     <hr class="receipt-line">
                     
                     <div class="receipt-subtitle text-muted mb-1">رقم الدور</div>
@@ -184,90 +184,13 @@ function printQueueNumber() {
 // دالة الطباعة السحرية: تقوم بنسخ المحتوى خارج المودال تماماً لطباعة مستقيمة ونقية
 // الدالة السحرية الجديدة: تفتح نافذة كود نقي منفصلة تماماً للطباعة وتغلقها فوراً لحل مشكلة بياض الصفحة
 function triggerThermalPrint() {
-    const branch = document.getElementById('queueBranch').textContent;
+    const branch = encodeURIComponent(document.getElementById('queueBranch').textContent);
     const number = document.getElementById('queueNumber').textContent;
-    const customer = document.getElementById('queueCustomer').textContent;
+    const customer = encodeURIComponent(document.getElementById('queueCustomer').textContent);
     const date = document.getElementById('queueDate').textContent;
     const time = document.getElementById('queueTime').textContent;
-
-    // فتح نافذة طباعة فارغة ومؤقتة
-   let iframe = document.getElementById('thermal-print-frame');
-    
-    // تأمين وجود الـ iframe لو لم يكن مكتوباً في الـ HTML
-    if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.id = 'thermal-print-frame';
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-    }
-    
-    const iframeDoc = iframe.contentWindow.document;
-    
-    
-    // كتابة كود HTML نقي وخام ومخصص 100% للطباعة الحرارية بلون أسود داكن
-    iframeDoc.open();
-    iframeDoc.write(`
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-            <title>طباعة التذكرة</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { 
-                    font-family: Arial, sans-serif; 
-                    width: 70mm; 
-                    margin: 0 auto; 
-                    padding: 4mm 2mm; 
-                    background: #fff; 
-                    color: #000 !important;
-                    text-align: center;
-                }
-                .title { font-size: 18pt; font-weight: bold; margin-bottom: 2mm; }
-                .line { border-top: 2px solid #000; margin: 3mm 0; }
-                .dashed-line { border-top: 1px dashed #000; margin: 3mm 0; }
-                .subtitle { font-size: 11pt; color: #000; margin-bottom: 1mm; }
-                .number { font-size: 55pt; font-weight: 900; margin: 2mm 0; line-height: 1; color: #000 !important; }
-                .details { font-size: 10.5pt; text-align: right; padding: 0 2mm; line-height: 1.6; }
-                .footer { font-size: 9.5pt; margin-top: 4mm; font-weight: bold; }
-                @media print {
-                    @page { size: 70mm auto; margin: 0mm; }
-                    body { width: 70mm; }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="title">LyomasTech</div>
-            <div class="line"></div>
-            <div class="subtitle">رقم الدور</div>
-            <div class="number">${number}</div>
-            <div class="line"></div>
-            <div class="details">
-                <strong>العميل:</strong> ${customer}<br>
-                <strong>الفرع:</strong> ${branch}
-            </div>
-            <div class="dashed-line"></div>
-            <div class="subtitle" style="font-size: 9pt;">${time} &nbsp;&nbsp; ${date}</div>
-            <div class="footer">
-                <p>شكراً لزيارتكم!</p>
-                <p style="font-weight: normal; font-size: 8.5pt; margin-top: 1mm;">يرجى الانتظار حتى يتم استدعائكم</p>
-            </div>
-            <script>
-                // تشغيل الطباعة فوراً وبشكل تلقائي عند اكتمال تحميل النافذة المخفية
-                window.onload = function() {
-                    window.print();
-                    setTimeout(function() { window.close(); }, 500);
-                };
-            <\/script>
-        </body>
-        </html>
-    `);
-    
-    iframeDoc.close();
-
-    setTimeout(function() {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-    }, 250);
+    const url = `/queue/receipt/?number=${number}&branch=${branch}&customer=${customer}&date=${date}&time=${time}`;
+    window.open(url, '_blank', 'width=420,height=720');
 }
 
 

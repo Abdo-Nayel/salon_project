@@ -22,22 +22,15 @@
 
                     {% if request.user.is_superuser %}
                     <div class="mb-3">
-                        <label class="form-label fw-bold">الفرع</label>
-                        <select class="form-select" name="branch">
-                            <option value="">-- اختر الفرع --</option>
-                            {% for branch in branches %}
-                            <option value="{{ branch.id }}">{{ branch.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    {% endif %}
-
-                    <div class="mb-3">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" name="is_active" checked>
                             <label class="form-check-label fw-bold">بنك نشط</label>
                         </div>
                     </div>
+                    {% else %}
+                    <input type="hidden" name="is_active" value="on">
+                    {% endif %}
+                    <p class="small text-muted">البنك يظهر في كل الفروع. حركاته تُسجّل حسب فرع كل عملية.</p>
 
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary flex-fill">

@@ -27,6 +27,7 @@
                         <th class="py-3">المبلغ</th>
                         <th class="py-3">الدفع</th>
                         <th class="py-3">البنك</th>
+                        <th class="py-3">بيان</th>
                         <th class="py-3">التاريخ</th>
                         <th class="py-3">بواسطة</th>
                     </tr>
@@ -56,12 +57,13 @@
                             {% endif %}
                         </td>
                         <td>{{ v.bank.name|default:"—" }}</td>
+                        <td class="small text-muted">{{ v.notes|default:"—" }}</td>
                         <td>{{ v.date|date:"Y-m-d" }}</td>
                         <td class="text-muted small">{{ v.created_by|default:"—" }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
+                        <td colspan="9" class="text-center py-5 text-muted">
                             لا حركات — ابدأ بـ <a href="/expenses/type/add/">تكويد مصروف</a>
                         </td>
                     </tr>

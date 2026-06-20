@@ -218,6 +218,35 @@ sudo systemctl restart sweb
 
 ---
 
+## تحديث عميل (كود جديد من GitHub)
+
+**من جهازك:** `git push`
+
+**على السيرفر** (مثال ahmedatef):
+
+```bash
+cd /var/www/ahmedatef
+source .venv/bin/activate
+bash scripts/update.sh
+sudo systemctl restart ahmedatef
+```
+
+`update.sh` يسحب آخر كود ويتجاهل التعديلات المحلية على الملفات (`.env` يبقى كما هو).
+
+إذا `update.sh` غير موجود بعد pull قديم، نفّذ يدوياً:
+
+```bash
+cd /var/www/ahmedatef
+git fetch origin main
+git reset --hard origin/main
+bash scripts/deploy.sh
+sudo systemctl restart ahmedatef
+```
+
+> **لا تستخدم** `git commit` على السيرفر — التعديلات تكون من جهاز التطوير فقط.
+
+---
+
 ## صيانة
 
 ```bash

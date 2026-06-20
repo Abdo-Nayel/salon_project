@@ -19,6 +19,7 @@ T_USER = 'مستخدم'
 T_STOCK = 'حركة مخزون'
 T_SETTINGS = 'إعدادات'
 T_BACKUP = 'نسخ احتياطي'
+T_ACCOUNT_TRANSFER = 'تحويل حساب'
 
 
 def _resolve_branch(request, branch):

@@ -5,130 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>فاتورة - {{ config.shop_name }}</title>
+    {% include "salon/partials/favicon.html" %}
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'salon/receipt_print.css' %}">
     <style>
-        @media print {
-            @page { size: 70mm auto; margin: 0; }
-            body { width: 70mm; margin: 0; padding: 0; }
-            .no-print { display: none !important; }
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
-            width: 70mm;
-            margin: 0 auto;
-            padding: 8mm 4mm;
-            background: #fff;
-            color: #000;
-            font-size: 9pt;
-            line-height: 1.4;
-        }
-        .receipt { text-align: center; }
-        .receipt-brand { margin-bottom: 2mm; }
-        .shop-logo {
-            display: block;
-            max-width: 50mm;
-            max-height: 18mm;
-            object-fit: contain;
-            margin: 0 auto 2mm;
-        }
-        .shop-name {
-            font-size: 13pt;
-            font-weight: 800;
-            margin-bottom: 1mm;
-        }
-        .shop-phone {
-            font-size: 8pt;
-            color: #444;
-            margin-bottom: 2mm;
-            font-weight: 600;
-        }
-        .shop-address {
-            font-size: 7.5pt;
-            color: #555;
-            margin-top: 3mm;
-            padding-top: 2mm;
-            border-top: 1px dashed #bbb;
-            line-height: 1.5;
-        }
-        .shop-info {
-            font-size: 7pt;
-            color: #555;
-            margin-bottom: 2mm;
-        }
-        .divider {
-            border: none;
-            border-top: 1px dashed #999;
-            margin: 2mm 0;
-        }
-        .divider-thick {
-            border-top: 2px solid #000;
-            margin: 3mm 0;
-        }
-        .section-title {
-            font-size: 9pt;
-            font-weight: 700;
-            text-align: right;
-            margin: 2mm 0 1mm;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 8pt;
-            margin: 1mm 0;
-            text-align: right;
-        }
-        .info-row .label { color: #666; }
-        .info-row .value { font-weight: 600; }
-        .item-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 8pt;
-            margin: 1.5mm 0;
-            text-align: right;
-            padding: 0 1mm;
-        }
-        .item-name { flex: 1; text-align: right; }
-        .item-qty { width: 25px; text-align: center; color: #888; }
-        .item-price { width: 55px; text-align: left; font-weight: 600; }
-        .total-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 10pt;
-            font-weight: 900;
-            margin: 2mm 0;
-            padding-top: 2mm;
-        }
-        .grand-total {
-            font-size: 12pt;
-            font-weight: 900;
-            border-top: 2px solid #000;
-            border-bottom: 2px solid #000;
-            padding: 2mm 0;
-            margin: 2mm 0;
-        }
-        .payment-method {
-            font-size: 9pt;
-            font-weight: 700;
-            color: #667eea;
-            margin: 2mm 0;
-        }
-        .footer-text {
-            font-size: 7pt;
-            color: #888;
-            margin-top: 4mm;
-        }
-        .barcode-area {
-            margin: 3mm 0;
-            font-family: monospace;
-            font-size: 10pt;
-            letter-spacing: 2px;
-        }
-        /* Print bar */
+        body { padding-bottom: 80px; }
         .print-bar {
             position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            bottom: 0; left: 0; right: 0;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 15px;
             display: flex;
@@ -146,24 +30,14 @@
             border-radius: 12px;
             font-family: 'Cairo', sans-serif;
             font-size: 14px;
-            font-weight: 700;
+            font-weight: 800;
             cursor: pointer;
-            transition: all 0.3s;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .print-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
-        .close-btn {
-            background: rgba(255,255,255,0.2);
-            color: #fff;
-        }
+        .close-btn { background: rgba(255,255,255,0.2); color: #fff; }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-<base target="_blank">
 </head>
 <body>
     <div class="receipt">
@@ -172,28 +46,28 @@
         <hr class="divider-thick">
 
         <div class="info-row">
-            <span class="label">رقم الفاتورة:</span>
-            <span class="value">{{ invoice.display_number }}</span>
+            <span class="info-label">رقم الفاتورة:</span>
+            <span class="info-value">{{ invoice.display_number }}</span>
         </div>
         <div class="info-row">
-            <span class="label">التاريخ:</span>
-            <span class="value">{{ invoice.created_at|date:"Y-m-d H:i" }}</span>
+            <span class="info-label">التاريخ:</span>
+            <span class="info-value">{{ invoice.created_at|date:"Y-m-d H:i" }}</span>
         </div>
         {% if invoice.customer %}
         <div class="info-row">
-            <span class="label">العميل:</span>
-            <span class="value">{{ invoice.customer.name }}</span>
+            <span class="info-label">العميل:</span>
+            <span class="info-value">{{ invoice.customer.name }}</span>
         </div>
         {% endif %}
         {% if invoice.employee %}
         <div class="info-row">
-            <span class="label">الموظف:</span>
-            <span class="value">{{ invoice.employee.name }}</span>
+            <span class="info-label">الموظف:</span>
+            <span class="info-value">{{ invoice.employee.name }}</span>
         </div>
         {% elif invoice.barber %}
         <div class="info-row">
-            <span class="label">الموظف:</span>
-            <span class="value">{{ invoice.barber.get_full_name|default:invoice.barber.username }}</span>
+            <span class="info-label">الموظف:</span>
+            <span class="info-value">{{ invoice.barber.get_full_name|default:invoice.barber.username }}</span>
         </div>
         {% endif %}
 
@@ -212,13 +86,13 @@
         <hr class="divider">
 
         <div class="item-row">
-            <span class="item-name" style="font-weight:600;">المجموع:</span>
+            <span class="item-name">المجموع:</span>
             <span class="item-price">{{ invoice.subtotal }} ج</span>
         </div>
         {% if invoice.discount > 0 %}
         <div class="item-row">
-            <span class="item-name" style="color:#e74c3c;">الخصم:</span>
-            <span class="item-price" style="color:#e74c3c;">-{{ invoice.discount }} ج</span>
+            <span class="item-name" style="color:#000;">الخصم:</span>
+            <span class="item-price">-{{ invoice.discount }} ج</span>
         </div>
         {% endif %}
         {% if invoice.tax > 0 %}
@@ -234,7 +108,7 @@
         </div>
 
         <div class="payment-method">
-            💳 {{ invoice.get_payment_method_display }}
+            {{ invoice.get_payment_method_display }}
         </div>
 
         <hr class="divider">

@@ -45,6 +45,13 @@
                             <option value="USD" {% if settings.currency == 'USD' %}selected{% endif %}>🇺🇸 دولار أمريكي</option>
                         </select>
                     </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="auto_backup" id="autoBackup" {% if settings.auto_backup %}checked{% endif %}>
+                            <label class="form-check-label fw-bold" for="autoBackup">تحميل نسخة SQL تلقائياً عند فتح الإعدادات</label>
+                        </div>
+                        <small class="text-muted">يُحمّل الملف إلى مجلد Downloads في المتصفح</small>
+                    </div>
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save me-2"></i> حفظ الإعدادات
                     </button>
@@ -70,9 +77,10 @@
                 <p class="text-muted mb-3">لم يتم عمل نسخة بعد</p>
                 {% endif %}
 
-                <a href="/settings/backup/" class="btn btn-success mb-4">
+                <button type="button" id="btnBackupDownload" class="btn btn-success mb-4">
                     <i class="fas fa-download me-2"></i> تحميل نسخة SQL
-                </a>
+                </button>
+                <span id="backupStatus" class="small text-muted d-block mb-3"></span>
 
                 {% if request.user.is_superuser %}
                 <hr>
@@ -279,5 +287,45 @@ function confirmRestore() {
     }
     return confirm('⚠️ تحذير نهائي: سيتم استبدال كل بيانات قاعدة البيانات. هل أنت متأكد؟');
 }
+
+async function downloadBackup() {
+    const status = document.getElementById('backupStatus');
+    status.textContent = 'جاري إنشاء النسخة...';
+    try {
+        const resp = await fetch('/settings/backup/', { credentials: 'same-origin' });
+        if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(text.trim() || 'فشل النسخ الاحتياطي');
+        }
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        let filename = 'salon_backup.sql';
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        if (match) filename = match[1];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        status.textContent = '✅ تم التحميل: ' + filename;
+        localStorage.setItem('lastAutoBackupDate', new Date().toDateString());
+    } catch (err) {
+        status.textContent = '❌ ' + err.message;
+    }
+}
+
+document.getElementById('btnBackupDownload').addEventListener('click', downloadBackup);
+
+{% if settings.auto_backup %}
+(function autoBackupOncePerDay() {
+    const today = new Date().toDateString();
+    if (localStorage.getItem('lastAutoBackupDate') !== today) {
+        setTimeout(downloadBackup, 800);
+    }
+})();
+{% endif %}
 </script>
 {% endblock %}

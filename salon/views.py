@@ -37,14 +37,18 @@ from .models import (
     PurchaseInvoice, PurchaseInvoiceItem,
     ConsumptionInvoice, ConsumptionInvoiceItem,
     ExpenseType, ExpenseVoucher,
-    SalonSettings, Employee, ActivityLog,
+    SalonSettings, Employee, ActivityLog, AccountTransfer,
 )
 from .backup_utils import create_backup_sql, restore_backup_sql, latest_backup_info
 from .audit_utils import (
     log_activity, ACTION_CREATE, ACTION_UPDATE, ACTION_DELETE, ACTION_VOID,
     T_INVOICE, T_BOOKING, T_PRODUCT, T_PURCHASE, T_CONSUMPTION,
     T_EXPENSE_TYPE, T_EXPENSE_VOUCHER, T_SERVICE, T_CUSTOMER, T_EMPLOYEE,
-    T_USER, T_STOCK, T_SETTINGS, T_BACKUP,
+    T_USER, T_STOCK, T_SETTINGS, T_BACKUP, T_ACCOUNT_TRANSFER,
+)
+from .statement_utils import (
+    build_bank_statement, build_cash_statement, build_transfer_statement,
+    get_active_banks, get_statement_branch,
 )
 from .forms import (
     LoginForm, UserForm, ServiceForm, ProductForm,
@@ -266,11 +270,11 @@ def pos(request):
 
     if branch:
         services = Service.objects.filter(is_active=True)
-        banks = Bank.objects.filter(branch=branch, is_active=True)
+        banks = get_active_banks()
         employees = Employee.objects.filter(branch=branch, is_active=True).order_by('serial_number')
     else:
         services = Service.objects.filter(is_active=True)
-        banks = Bank.objects.filter(is_active=True)
+        banks = get_active_banks()
         employees = Employee.objects.filter(is_active=True).order_by('branch', 'serial_number')
 
     if request.method == 'POST':
@@ -698,13 +702,21 @@ def print_queue_number(request):
     
     # Get next number
     next_number = daily_counter.get_next_number()
-    
+
+    print_url = (
+        f'/queue/receipt/?number={next_number}'
+        f'&branch={branch.name}'
+        f'&date={today.strftime("%Y-%m-%d")}'
+        f'&time={timezone.now().strftime("%H:%M")}'
+    )
+
     return JsonResponse({
         'success': True,
         'number': next_number,
         'branch': branch.name,
         'date': today.strftime('%Y-%m-%d'),
-        'time': timezone.now().strftime('%H:%M')
+        'time': timezone.now().strftime('%H:%M'),
+        'print_url': print_url,
     })
 
 # =============================================================================
@@ -1640,9 +1652,7 @@ def expense_return_delete(request, pk):
 
 def _render_expense_voucher_form(request, branch, voucher_type):
     expense_types = ExpenseType.objects.filter(branch=branch, is_active=True).order_by('code', 'name')
-    banks = Bank.objects.filter(is_active=True)
-    if branch:
-        banks = banks.filter(Q(branch=branch) | Q(branch__isnull=True))
+    banks = get_active_banks()
     is_return = voucher_type == 'return'
     ctx = {
         'expense_types': expense_types,
@@ -1948,6 +1958,125 @@ def activity_log(request):
         'total_count': logs.count(),
         'is_superuser': request.user.is_superuser,
     })
+
+
+@login_required
+def account_statement(request):
+    """كشف الحسابات — نقدية وبنوك."""
+    if not require_access(request, 'can_reports'):
+        return redirect('dashboard')
+
+    branch = get_statement_branch(request)
+    if branch is None and not request.user.can_see_all_branches:
+        user_branch = get_user_branch(request)
+        if not user_branch:
+            messages.error(request, "🏪 لم يتم تعيين فرع لهذا المستخدم")
+            return redirect('dashboard')
+        branch = user_branch
+
+    today = timezone.localdate().isoformat()
+    start_date = request.GET.get('start_date') or today
+    end_date = request.GET.get('end_date') or today
+    statement_type = request.GET.get('type', 'cash')
+    bank_id = request.GET.get('bank', '').strip()
+
+    if statement_type == 'bank':
+        data = build_bank_statement(
+            branch, start_date, end_date,
+            bank_id=int(bank_id) if bank_id.isdigit() else None,
+        )
+    elif statement_type == 'transfer':
+        data = build_transfer_statement(
+            branch, start_date, end_date,
+            bank_id=int(bank_id) if bank_id.isdigit() else None,
+        )
+    else:
+        statement_type = 'cash'
+        data = build_cash_statement(branch, start_date, end_date)
+
+    branches = Branch.objects.filter(is_active=True) if request.user.can_see_all_branches else []
+
+    return render(request, 'salon/account_statement.html', {
+        'statement_type': statement_type,
+        'rows': data['rows'],
+        'total_in': data['total_in'],
+        'total_out': data['total_out'],
+        'balance': data['balance'],
+        'start_date': start_date,
+        'end_date': end_date,
+        'branches': branches,
+        'banks': get_active_banks(),
+        'show_branch_filter': request.user.can_see_all_branches,
+        'selected_branch_id': request.GET.get('branch', ''),
+        'selected_bank_id': bank_id,
+    })
+
+
+@login_required
+@require_POST
+def account_transfer_save(request):
+    """تحويل بين النقدية والبنك."""
+    if not require_access(request, 'can_reports'):
+        return JsonResponse({'success': False, 'error': 'غير مصرح'})
+
+    try:
+        data = json.loads(request.body)
+        direction = data.get('direction', '').strip()
+        bank_id = data.get('bank_id')
+        amount = Decimal(str(data.get('amount', 0)))
+        notes = (data.get('notes') or '').strip()
+        transfer_date = (data.get('date') or '').strip() or timezone.localdate().isoformat()
+
+        if direction not in (
+            AccountTransfer.DIRECTION_CASH_TO_BANK,
+            AccountTransfer.DIRECTION_BANK_TO_CASH,
+        ):
+            return JsonResponse({'success': False, 'error': 'اتجاه التحويل غير صالح'})
+        if not bank_id:
+            return JsonResponse({'success': False, 'error': 'اختر البنك'})
+        if amount <= 0:
+            return JsonResponse({'success': False, 'error': 'المبلغ يجب أن يكون أكبر من صفر'})
+
+        bank = get_object_or_404(Bank, id=bank_id, is_active=True)
+
+        branch = get_user_branch(request)
+        if not branch:
+            branch_param = data.get('branch_id') or request.GET.get('branch')
+            if branch_param and getattr(request.user, 'can_see_all_branches', False):
+                branch = get_object_or_404(Branch, id=int(branch_param), is_active=True)
+            else:
+                branch = Branch.objects.filter(is_active=True).first()
+
+        if not branch:
+            return JsonResponse({'success': False, 'error': 'لم يتم تحديد فرع'})
+
+        from datetime import datetime
+        date_obj = datetime.strptime(transfer_date, '%Y-%m-%d').date()
+
+        transfer = AccountTransfer.objects.create(
+            branch=branch,
+            direction=direction,
+            bank=bank,
+            amount=amount,
+            notes=notes,
+            date=date_obj,
+            created_by=request.user,
+        )
+
+        log_activity(
+            request, ACTION_CREATE, T_ACCOUNT_TRANSFER,
+            f'#{transfer.serial_number} {transfer.get_direction_display()} — {bank.name} — {amount}',
+            entity_id=transfer.id,
+            branch=branch,
+        )
+
+        return JsonResponse({
+            'success': True,
+            'serial': transfer.serial_number,
+            'message': f'تم التحويل #{transfer.serial_number}',
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
 
 
 # =============================================================================
@@ -2262,6 +2391,7 @@ def settings_view(request):
             salon_settings.phone = request.POST.get('phone', '').strip()
             salon_settings.address = request.POST.get('address', '').strip()
             salon_settings.currency = request.POST.get('currency', 'EGP')
+            salon_settings.auto_backup = request.POST.get('auto_backup') == 'on'
             if request.FILES.get('logo'):
                 salon_settings.logo = request.FILES['logo']
             salon_settings.save()
@@ -2293,7 +2423,7 @@ def settings_view(request):
     users = User.objects.all().order_by('user_code', 'username')
     if not request.user.is_superuser:
         users = users.filter(branch=get_user_branch(request))
-    banks = Bank.objects.all() if request.user.is_superuser else Bank.objects.filter(branch=get_user_branch(request))
+    banks = get_active_banks() if request.user.is_superuser else get_active_banks()
 
     last_backup = latest_backup_info()
 
@@ -2309,8 +2439,7 @@ def settings_view(request):
 @login_required
 def settings_backup(request):
     if not request.user.can_settings and not request.user.is_superuser:
-        messages.error(request, "⛔ ليس لديك صلاحية الوصول")
-        return redirect('dashboard')
+        return HttpResponse('Forbidden', status=403)
     try:
         filepath = create_backup_sql()
         with open(filepath, 'rb') as f:
@@ -2319,6 +2448,8 @@ def settings_backup(request):
         response['Content-Disposition'] = f'attachment; filename="{filepath.name}"'
         return response
     except Exception as e:
+        if request.headers.get('X-Requested-With') == 'fetch' or 'fetch' in request.META.get('HTTP_SEC_FETCH_MODE', ''):
+            return HttpResponse(str(e), status=500, content_type='text/plain; charset=utf-8')
         messages.error(request, f"❌ {e}")
         return redirect('settings')
 
@@ -2602,11 +2733,7 @@ def bank_list(request):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
-    banks = Bank.objects.filter(is_active=True)
-    if not request.user.is_superuser:
-        branch = get_user_branch(request)
-        if branch:
-            banks = banks.filter(branch=branch)
+    banks = get_active_banks()
 
     return render(request, 'salon/bank_list.html', {'banks': banks})
 
@@ -2617,35 +2744,52 @@ def bank_add(request):
         messages.error(request, "⛔ ليس لديك صلاحية الوصول")
         return redirect('dashboard')
 
-    if request.user.is_superuser:
-        branches = Branch.objects.all()
-    else:
-        user_branch = get_user_branch(request)
-        branches = Branch.objects.filter(id=user_branch.id) if user_branch else Branch.objects.none()
-
     if request.method == 'POST':
-        form = BankForm(request.POST)
-        if form.is_valid():
-            bank = form.save(commit=False)
-            if not request.user.is_superuser:
-                bank.branch = get_user_branch(request)
-            bank.save()
-            messages.success(request, "✅ تم إضافة البنك بنجاح")
-            return redirect('settings')
-    else:
-        form = BankForm()
-        if not request.user.is_superuser:
-            form.fields['branch'].queryset = branches
+        name = request.POST.get('name', '').strip()
+        account_number = request.POST.get('account_number', '').strip()
+        is_active = request.POST.get('is_active') == 'on'
+        if not name:
+            messages.error(request, "اسم البنك مطلوب")
+            return redirect('bank_add')
+        Bank.objects.create(
+            name=name,
+            account_number=account_number,
+            branch=None,
+            is_active=is_active,
+        )
+        messages.success(request, "✅ تم إضافة البنك — يظهر في كل الفروع")
+        return redirect('settings')
 
-    return render(request, 'salon/bank_form.html', {
-        'form': form,
-        'branches': branches,
-    })
+    return render(request, 'salon/bank_form.html')
 
 
 # =============================================================================
 # PRINTING - Queue Tickets & Invoices
 # =============================================================================
+
+@login_required
+def print_simple_queue_receipt(request):
+    """طباعة رقم دور بسيط — نفس إعدادات الهيدر/الفوتر."""
+    number = request.GET.get('number', '').strip()
+    if not number.isdigit():
+        return redirect('booking_list')
+
+    branch_name = request.GET.get('branch', '').strip()
+    customer_name = request.GET.get('customer', 'عميل').strip() or 'عميل'
+    date_str = request.GET.get('date', timezone.localdate().isoformat())
+    time_str = request.GET.get('time', timezone.localtime().strftime('%H:%M'))
+
+    context = {
+        'queue_number': int(number),
+        'customer_name': customer_name,
+        'branch_name': branch_name,
+        'now': timezone.now(),
+        'config': SalonSettings.get().print_config(request),
+        'display_date': date_str,
+        'display_time': time_str,
+    }
+    return render(request, 'salon/queue_receipt.html', context)
+
 
 @login_required
 def print_queue_ticket(request, pk):

@@ -16,6 +16,20 @@ def _pg_bin(name):
     found = shutil.which(name)
     if found:
         return found
+    # Linux (Debian/Ubuntu server)
+    for pattern in (
+        Path(f'/usr/bin/{name}'),
+        Path(f'/usr/local/bin/{name}'),
+    ):
+        if pattern.exists():
+            return str(pattern)
+    pg_root = Path('/usr/lib/postgresql')
+    if pg_root.is_dir():
+        for ver_dir in sorted(pg_root.iterdir(), reverse=True):
+            candidate = ver_dir / 'bin' / name
+            if candidate.exists():
+                return str(candidate)
+    # Windows
     for ver in range(20, 10, -1):
         path = Path(f'C:/Program Files/PostgreSQL/{ver}/bin/{name}.exe')
         if path.exists():

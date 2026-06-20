@@ -83,14 +83,19 @@ class Command(BaseCommand):
                 self.stdout.write(f'Deploy superuser already exists: {username}')
             return
 
+        if User.objects.filter(is_superuser=True).exists():
+            self.stdout.write(
+                'Another superuser already exists — skipping deploy superuser creation.'
+            )
+            return
+
+        user_code = User.next_code()
         user = User.objects.create_superuser(
             username=username,
             email='',
             password=password,
+            user_code=user_code,
+            first_name=client_name,
         )
-        if hasattr(user, 'user_code') and not user.user_code:
-            user.user_code = User.next_code()
-            user.first_name = client_name
-            user.save(update_fields=['user_code', 'first_name'])
 
         self.stdout.write(self.style.SUCCESS(f'Created deploy superuser: {username}'))

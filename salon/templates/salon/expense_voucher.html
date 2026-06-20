@@ -66,6 +66,11 @@
                     </div>
                 </div>
 
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">بيان / ملاحظات</label>
+                    <textarea id="voucherNotes" class="form-control" rows="2" placeholder="اختياري — وصف الحركة"></textarea>
+                </div>
+
                 <button type="button" class="btn w-100 btn-lg text-white" style="background:{{ header_bg }};" onclick="saveVoucher()">
                     <i class="fas fa-save me-1"></i> <span id="saveLabel">حفظ السند</span>
                 </button>
@@ -101,6 +106,7 @@ function loadVoucher() {
             currentVoucherId = v.id;
             document.getElementById('expenseType').value = v.expense_type_id;
             document.getElementById('amount').value = v.amount;
+            document.getElementById('voucherNotes').value = v.notes || '';
             if (v.payment_method === 'bank') {
                 document.getElementById('payBank').checked = true;
                 document.getElementById('bankSelect').value = v.bank_id || '';
@@ -118,6 +124,7 @@ function newVoucher() {
     document.getElementById('voucherSerial').value = '';
     document.getElementById('expenseType').value = '';
     document.getElementById('amount').value = '';
+    document.getElementById('voucherNotes').value = '';
     document.getElementById('payCash').checked = true;
     document.getElementById('bankSelect').value = '';
     toggleBank();
@@ -144,7 +151,7 @@ function saveVoucher() {
     if (!expense_type_id) { alert('اختر المصروف'); return; }
     if (!amount || parseFloat(amount) <= 0) { alert('أدخل المبلغ'); return; }
     if (payment_method === 'bank' && !bank_id) { alert('اختر البنك'); return; }
-    const payload = { expense_type_id: parseInt(expense_type_id, 10), amount, payment_method };
+    const payload = { expense_type_id: parseInt(expense_type_id, 10), amount, payment_method, notes: document.getElementById('voucherNotes').value.trim() };
     if (payment_method === 'bank') payload.bank_id = parseInt(bank_id, 10);
     if (currentVoucherId) payload.voucher_id = currentVoucherId;
     fetch(SAVE_URL, {

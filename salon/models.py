@@ -1028,3 +1028,60 @@ class ActivityLog(models.Model):
             self.ACTION_DELETE: 'danger',
             self.ACTION_VOID: 'warning',
         }.get(self.action, 'secondary')
+
+
+# =============================================================================
+# ACCOUNT TRANSFERS (تحويل بين نقدية وبنوك)
+# =============================================================================
+
+class AccountTransfer(models.Model):
+    DIRECTION_CASH_TO_BANK = 'cash_to_bank'
+    DIRECTION_BANK_TO_CASH = 'bank_to_cash'
+    DIRECTION_CHOICES = [
+        (DIRECTION_CASH_TO_BANK, 'نقدية → بنك'),
+        (DIRECTION_BANK_TO_CASH, 'بنك → نقدية'),
+    ]
+
+    branch = models.ForeignKey(
+        Branch, on_delete=models.CASCADE, related_name='account_transfers',
+        verbose_name='الفرع',
+    )
+    direction = models.CharField(max_length=20, choices=DIRECTION_CHOICES, verbose_name='الاتجاه')
+    bank = models.ForeignKey(
+        Bank, on_delete=models.PROTECT, related_name='account_transfers',
+        verbose_name='البنك',
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name='المبلغ')
+    notes = models.TextField(blank=True, default='', verbose_name='بيان')
+    date = models.DateField(default=timezone.now, verbose_name='التاريخ')
+    serial_number = models.PositiveIntegerField(default=0, verbose_name='المسلسل')
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='account_transfers', verbose_name='بواسطة',
+    )
+
+    class Meta:
+        verbose_name = 'تحويل حساب'
+        verbose_name_plural = 'تحويلات الحسابات'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'serial_number'],
+                name='unique_branch_transfer_serial',
+            ),
+        ]
+
+    def __str__(self):
+        return f'تحويل #{self.serial_number} — {self.get_direction_display()} — {self.amount}'
+
+    @classmethod
+    def next_serial(cls, branch):
+        from django.db.models import Max
+        last = cls.objects.filter(branch=branch).aggregate(m=Max('serial_number'))['m'] or 0
+        return last + 1
+
+    def save(self, *args, **kwargs):
+        if self.branch_id and not self.serial_number:
+            self.serial_number = AccountTransfer.next_serial(self.branch)
+        super().save(*args, **kwargs)

@@ -1,270 +1,259 @@
 ﻿{% load static %}
+
 <!DOCTYPE html>
+
 <html lang="ar" dir="rtl">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>دور الحجز - {{ config.shop_name }}</title>
+    {% include "salon/partials/favicon.html" %}
+
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800;900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{% static 'salon/receipt_print.css' %}">
+
     <style>
-        /* ==========================================================================
-           إعدادات الطباعة الحرارية الصارمة (80mm) لمتصفحات Chrome و Edge
-           ========================================================================== */
+
+        body { padding-bottom: 80px; width: 80mm; padding-left: 5mm; padding-right: 5mm; }
+
         @media print {
-            @page { 
-                size: 70mm auto; 
-                margin: 0mm !important; 
-            }
-            html, body {
-                width: 70mm !important;
-                background: #fff !important;
-                color: #000 !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-            }
-            body {
-                padding: 4mm 5mm !important; /* هوامش متزنة لمنع التفاف الكلمات عند الأطراف */
-            }
-            .no-print { 
-                display: none !important; 
-            }
+
+            @page { size: 70mm auto; margin: 0mm !important; }
+
+            body { padding: 4mm 5mm !important; }
+
         }
 
-        /* تنسيقات العرض العام (على الشاشة والطباعة) */
-        * { 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
-        }
-        body {
-            font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
-            width: 80mm;
-            margin: 0 auto;
-            padding: 8mm 5mm;
-            background: #fff;
-            color: #000;
-            font-size: 11pt;
-            line-height: 1.4;
-            padding-bottom: 80px; /* مسافة لحماية تداخل شريط التحكم السفلي */
-        }
-        .receipt {
-            text-align: center;
-            width: 100%;
-        }
-        .receipt-brand { margin-bottom: 2mm; }
-        .shop-logo {
-            display: block;
-            max-width: 50mm;
-            max-height: 20mm;
-            object-fit: contain;
-            margin: 0 auto 2mm;
-        }
-        .shop-name {
-            font-size: 16pt;
-            font-weight: 800;
-            margin-bottom: 1mm;
-        }
-        .shop-phone {
-            font-size: 9pt;
-            color: #333;
-            margin-bottom: 2mm;
-            font-weight: 600;
-        }
-        .shop-address {
-            font-size: 8.5pt;
-            color: #444;
-            margin-top: 4mm;
-            padding-top: 2mm;
-            border-top: 1px dashed #000;
-            line-height: 1.5;
-            font-weight: 600;
-        }
-        .shop-info {
-            font-size: 9pt;
-            color: #444;
-            margin-bottom: 2mm;
-            font-weight: 600;
-        }
-        .divider {
-            border: none;
-            border-top: 1px dashed #000;
-            margin: 4mm 0;
-        }
-        .divider-thick {
-            border: none;
-            border-top: 2px solid #000;
-            margin: 4mm 0;
-        }
-        .label {
-            font-size: 12pt;
-            color: #222;
-            font-weight: 700;
-            margin-top: 1mm;
-        }
-        .queue-number {
-            font-size: 58pt; /* تكبير الرقم ليكون واضحاً جداً وفي المنتصف */
-            font-weight: 900;
-            color: #000; /* نقي أسود للطباعة الحرارية المثالية */
-            margin: 2mm 0;
-            line-height: 1;
-        }
-        
-        /* ضبط هيكل صفوف البيانات لتوزيعها على الأطراف وبحجم خط واضح */
-        .info-table {
-            width: 100%;
-            margin: 4mm 0;
-            border-collapse: collapse;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2mm 1mm;
-            font-size: 11pt;
-        }
-        .info-label { 
-            color: #555; 
-            font-weight: 600;
-        }
-        .info-value { 
-            font-weight: 800; 
-            color: #000;
-            text-align: left;
-        }
-        
-        .footer-text {
-            font-size: 9.5pt;
-            color: #333;
-            margin-top: 4mm;
-            font-weight: 600;
-            line-height: 1.5;
-        }
-        .date-time {
-            font-size: 8.5pt;
-            color: #555;
-            margin-top: 3mm;
-            font-weight: 600;
-        }
-        
-        /* شريط أزرار التحكم الافتراضي (يختفي كلياً عند الطباعة الفعالة) */
         .print-bar {
+
             position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+
+            bottom: 0; left: 0; right: 0;
+
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
             padding: 15px;
+
             display: flex;
+
             gap: 10px;
+
             justify-content: center;
+
             align-items: center;
+
             box-shadow: 0 -5px 20px rgba(0,0,0,0.2);
+
             z-index: 9999;
+
         }
+
         .print-btn {
+
             background: #fff;
+
             color: #764ba2;
+
             border: none;
+
             padding: 12px 28px;
+
             border-radius: 12px;
+
             font-family: 'Cairo', sans-serif;
+
             font-size: 14px;
-            font-weight: 700;
+
+            font-weight: 800;
+
             cursor: pointer;
-            transition: all 0.3s;
+
             display: flex;
+
             align-items: center;
+
             gap: 8px;
+
         }
-        .print-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
-        }
-        .close-btn {
-            background: rgba(255,255,255,0.2);
-            color: #fff;
-        }
-        .close-btn:hover {
-            background: rgba(255,255,255,0.3);
-        }
+
+        .close-btn { background: rgba(255,255,255,0.2); color: #fff; }
+
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;900&display=swap" rel="stylesheet">
+
 </head>
+
 <body>
+
     <div class="receipt">
+
         {% include "salon/partials/receipt_brand_header.html" %}
 
+
+
         <hr class="divider-thick">
+
+
 
         <div class="label">رقم الدور</div>
+
         <div class="queue-number">{{ queue_number|default:"1" }}</div>
+
+
 
         <hr class="divider-thick">
 
+
+
         <div class="info-table">
+
             {% if booking.customer_name or customer_name %}
+
             <div class="info-row">
+
                 <span class="info-label">العميل:</span>
+
                 <span class="info-value">{{ booking.customer_name|default:customer_name }}</span>
+
             </div>
+
             {% endif %}
+
+
+
+            {% if branch_name %}
+
+            <div class="info-row">
+
+                <span class="info-label">الفرع:</span>
+
+                <span class="info-value">{{ branch_name }}</span>
+
+            </div>
+
+            {% endif %}
+
             
+
             {% if booking.employee or employee_name %}
+
             <div class="info-row">
+
                 <span class="info-label">الموظف:</span>
+
                 <span class="info-value">{% if booking.employee %}{{ booking.employee.name }}{% else %}{{ employee_name }}{% endif %}</span>
+
             </div>
+
             {% endif %}
+
             
+
             {% if estimated_total %}
+
             <div class="info-row">
+
                 <span class="info-label">التكلفة المتوقعة:</span>
+
                 <span class="info-value">{{ estimated_total }} ج.م</span>
+
             </div>
+
             {% endif %}
+
         </div>
+
+
 
         <hr class="divider">
 
+
+
         <div class="date-time">
-            {{ booking.created_at|date:"Y-m-d H:i"|default:now|date:"Y-m-d H:i" }}
+
+            {% if display_date %}{{ display_date }} {{ display_time }}{% elif booking.created_at %}{{ booking.created_at|date:"Y-m-d H:i" }}{% else %}{{ now|date:"Y-m-d H:i" }}{% endif %}
+
         </div>
+
+
 
         <div class="footer-text">
+
             {{ config.footer_text|default:"شكراً لزيارتكم!" }}<br>
+
             يرجى الانتظار حتى يتم استدعائكم.
+
         </div>
+
         {% include "salon/partials/receipt_brand_footer.html" %}
+
     </div>
+
+
 
     <div class="print-bar no-print">
+
         <button class="print-btn" onclick="window.print()">
+
             <span>🖨️</span> طباعة الفاتورة
+
         </button>
+
         <button class="print-btn close-btn" onclick="closeReceipt()">
+
             <span>✕</span> إغلاق النافذة
+
         </button>
+
     </div>
 
+
+
     <script>
+
         function closeReceipt() {
+
             if (window.opener && !window.opener.closed) {
+
                 window.close();
+
                 return;
+
             }
+
             if (window.history.length > 1) {
+
                 window.history.back();
+
                 return;
+
             }
+
             window.location.href = '/bookings/';
+
         }
 
-        // إطلاق أمر الفوكس لسهولة الضغط على مفتاح Enter مباشرة للطباعة
+
+
         window.onload = function() {
+
             setTimeout(function() {
+
                 const printBtn = document.querySelector('.print-btn');
+
                 if(printBtn) printBtn.focus();
+
             }, 250);
+
         };
+
     </script>
+
 </body>
+
 </html>
+

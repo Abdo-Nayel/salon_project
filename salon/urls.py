@@ -27,6 +27,7 @@ urlpatterns = [
     path('bookings/add/', views.booking_add, name='booking_add'),
     path('bookings/<int:pk>/status/', views.booking_status, name='booking_status'),
     path('queue/print-number/', views.print_queue_number, name='print_queue_number'),
+    path('queue/receipt/', views.print_simple_queue_receipt, name='print_simple_queue'),
 
     # Inventory (أصناف + مشتريات + تقرير)
     path('inventory/', views.inventory, name='inventory'),
@@ -61,6 +62,8 @@ urlpatterns = [
     path('reports/', views.reports, name='reports'),
     path('reports/pdf/', views.reports_pdf, name='reports_pdf'),
     path('reports/activity-log/', views.activity_log, name='activity_log'),
+    path('reports/account-statement/', views.account_statement, name='account_statement'),
+    path('reports/account-transfer/', views.account_transfer_save, name='account_transfer_save'),
 
     # Services
     path('services/', views.service_list, name='service_list'),
