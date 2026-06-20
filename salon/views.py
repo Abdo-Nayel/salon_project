@@ -2483,7 +2483,9 @@ def settings_backup(request):
 # دالة مساعدة للتحقق من صلاحية المستخدم على إدارة المستخدمين وحماية الفروع
 def check_user_permission(request, target_user=None):
     # إذا لم يكن سوبر يوزر وليس لديه صلاحية إدارة المستخدمين -> مرفوض
-    if not request.user.is_superuser and not getattr(request.user, 'can_users', False):
+    if not request.user.is_superuser and not (
+        getattr(request.user, 'can_users', False) or getattr(request.user, 'can_settings', False)
+    ):
         return False
     
     # حماية الفروع: لو مش سوبر يوزر وبيحاول يوصل لمستخدم في فرع تاني -> مرفوض

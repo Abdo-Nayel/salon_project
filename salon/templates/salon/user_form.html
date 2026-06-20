@@ -66,12 +66,10 @@
                             <input type="text" id="lastName" class="form-control">
                         </div>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold small">اسم المستخدم *</label>
-                            <input type="text" id="username" class="form-control">
-                        </div>
-                    </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold small">اسم المستخدم *</label>
+                    <input type="text" id="username" class="form-control">
+                </div>
                     {% if request.user.is_superuser %}
                     <div class="mb-3">
                         <label class="form-label fw-bold small">الفرع *</label>
@@ -85,24 +83,30 @@
                     {% endif %}
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-bold small" id="passwordLabel">كلمة المرور *</label>
-                    <div class="input-group">
-                        <input type="password" id="password" class="form-control" placeholder="********" autocomplete="new-password">
-                        <button type="button" class="btn btn-outline-secondary" onclick="togglePwd('password', this)" title="إظهار/إخفاء">
-                            <i class="fas fa-eye"></i>
-                        </button>
+                <div class="card border-primary mb-3" id="passwordSection">
+                    <div class="card-header bg-primary text-white py-2 fw-bold small">
+                        <i class="fas fa-key me-1"></i> كلمة المرور
                     </div>
-                    <small class="text-muted" id="passwordHint"></small>
-                </div>
-
-                <div class="mb-3" id="confirmPasswordBlock">
-                    <label class="form-label fw-bold small">تأكيد كلمة المرور *</label>
-                    <div class="input-group">
-                        <input type="password" id="passwordConfirm" class="form-control" placeholder="أعد كتابة كلمة المرور" autocomplete="new-password">
-                        <button type="button" class="btn btn-outline-secondary" onclick="togglePwd('passwordConfirm', this)" title="إظهار/إخفاء">
-                            <i class="fas fa-eye"></i>
-                        </button>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small" id="passwordLabel">كلمة المرور *</label>
+                            <div class="input-group">
+                                <input type="password" id="password" class="form-control" placeholder="أدخل كلمة المرور" autocomplete="new-password">
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePwd('password', this)" title="إظهار/إخفاء">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted" id="passwordHint"></small>
+                        </div>
+                        <div class="mb-0" id="confirmPasswordBlock">
+                            <label class="form-label fw-bold small">تأكيد كلمة المرور *</label>
+                            <div class="input-group">
+                                <input type="password" id="passwordConfirm" class="form-control" placeholder="أعد كتابة كلمة المرور" autocomplete="new-password">
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePwd('passwordConfirm', this)" title="إظهار/إخفاء">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -298,6 +302,7 @@ function getPerms() {
 
 function setEditMode(on) {
     document.getElementById('createFields').classList.toggle('d-none', on);
+    document.getElementById('passwordSection').classList.remove('d-none');
     document.getElementById('passwordLabel').textContent = on ? 'كلمة مرور جديدة' : 'كلمة المرور *';
     document.getElementById('passwordHint').textContent = on ? 'اتركها فارغة إن لم تُرد التغيير' : '';
     document.getElementById('password').required = !on;
